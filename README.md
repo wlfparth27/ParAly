@@ -25,6 +25,8 @@ Firestore currently has a no-cost quota of 1 GiB stored data, 50,000 document re
 
 ## Local setup
 
+For the full Firebase console walkthrough, see [SETUP.md](./SETUP.md).
+
 1. Install a current Node.js LTS release.
 2. Create a Firebase project and register a Web app.
 3. In Firebase Authentication, enable Google sign-in and add both local/deployed domains under Authorized domains.

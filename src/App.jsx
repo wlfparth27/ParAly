@@ -256,6 +256,7 @@ function JournalPage({
   const seededRef = useRef(false);
   const appliedRestoreNonceRef = useRef(null);
   const [collaborationSession, setCollaborationSession] = useState(null);
+  const [collaborationAttempt, setCollaborationAttempt] = useState(0);
   const [collaborationState, setCollaborationState] = useState(cloudEnabled ? 'connecting' : 'local');
   const [collaborationError, setCollaborationError] = useState('');
 
@@ -268,6 +269,7 @@ function JournalPage({
     }
 
     let cancelled = false;
+    let retryTimer = null;
     seededRef.current = false;
     setCollaborationSession(null);
     setCollaborationState('connecting');
@@ -281,14 +283,18 @@ function JournalPage({
       {
         onSynced: () => {
           if (!cancelled) {
+            if (retryTimer) window.clearTimeout(retryTimer);
             setCollaborationState('ready');
             setCollaborationError('');
           }
         },
-        onError: () => {
+        onError: (error) => {
           if (!cancelled) {
+            if (retryTimer) window.clearTimeout(retryTimer);
             setCollaborationState('error');
-            setCollaborationError('Could not save or receive shared text. Check Firebase access and connection.');
+            setCollaborationError(error?.code === 'permission-denied'
+              ? 'Firebase denied access to this page’s shared text. Check the deployed Firestore rules.'
+              : 'The shared text connection failed. If you use Brave Shields or an ad blocker, allow Firebase for this site and reload.');
           }
         },
       },
@@ -309,7 +315,7 @@ function JournalPage({
       const now = Date.now();
       const lockExpiry = Number(pageData.collaborationSeedLockExpiresAt) || 0;
       if (lockExpiry > now) {
-        return { shouldSeed: false, waitingForSeed: true };
+        return { shouldSeed: false, waitingForSeed: true, waitForMs: lockExpiry - now + 500 };
       }
 
       const seedNonce = user.uid + '-' + now + '-' + Math.random().toString(36).slice(2, 10);
@@ -324,15 +330,24 @@ function JournalPage({
       return { shouldSeed: true, waitingForSeed: false, seedNonce };
     }).then((result) => {
       if (cancelled) return;
+      if (result.waitingForSeed) {
+        // Another session may have crashed after taking the seed lease. Retry
+        // automatically as soon as that lease expires instead of getting stuck
+        // forever behind an abandoned lock.
+        retryTimer = window.setTimeout(() => {
+          if (!cancelled) setCollaborationAttempt((attempt) => attempt + 1);
+        }, Math.max(1000, result.waitForMs || 1000));
+      }
+
       const seedThisPage = result.shouldSeed && ydoc.getXmlFragment('default').length === 0;
       setCollaborationSession({ doc: ydoc, provider, shouldSeed: seedThisPage, seedNonce: result.seedNonce || null });
       if (seedThisPage) setCollaborationState('seeding');
       else if (ydoc.getXmlFragment('default').length > 0) setCollaborationState('ready');
       // If another tab holds the seed lease, stay in the connecting state until
-      // its Yjs state arrives. If a previous crash left only the marker, this
-      // client can reclaim the page after the 30-second lease expires.
+      // its Yjs state arrives. A retry is scheduled if that lease was abandoned.
     }).catch((error) => {
       if (cancelled) return;
+      if (retryTimer) window.clearTimeout(retryTimer);
       setCollaborationState('error');
       setCollaborationError(error?.code === 'permission-denied'
         ? 'The shared page is not authorised for this account. Verify the deployed Firestore rules.'
@@ -342,7 +357,7 @@ function JournalPage({
     const timeout = window.setTimeout(() => {
       if (!cancelled) {
         setCollaborationState((current) => {
-          if (current === 'ready' || current === 'seeding') return current;
+          if (current !== 'connecting') return current;
           setCollaborationError('This page has not received its shared text yet. Check the connection and refresh.');
           return 'error';
         });
@@ -352,10 +367,11 @@ function JournalPage({
     return () => {
       cancelled = true;
       window.clearTimeout(timeout);
+      if (retryTimer) window.clearTimeout(retryTimer);
       provider.destroy();
       ydoc.destroy();
     };
-  }, [cloudEnabled, user?.uid, page.id, refreshKey]);
+  }, [cloudEnabled, user?.uid, page.id, refreshKey, collaborationAttempt]);
 
   const editorExtensions = useMemo(() => {
     const extensions = [
@@ -413,7 +429,14 @@ function JournalPage({
     editor.commands.setContent(page.content || '<p></p>', { emitUpdate: false });
     seededRef.current = true;
     setCollaborationState('ready');
-  }, [editor, cloudEnabled, collaborationSession?.shouldSeed, page.content]);
+    // Flush immediately instead of waiting only on the debounce timer. If the
+    // app is closed or the page changes quickly, the starter text still gets a
+    // chance to reach Firestore.
+    collaborationSession.provider?.flush().catch(() => {
+      setCollaborationState('error');
+      setCollaborationError('The starter text could not be saved to Firebase. Check your connection and Firestore rules.');
+    });
+  }, [editor, cloudEnabled, collaborationSession?.shouldSeed, collaborationSession?.provider, page.content]);
 
   useEffect(() => {
     if (!cloudEnabled || !editor || collaborationState !== 'ready') return;

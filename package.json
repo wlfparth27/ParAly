@@ -18,7 +18,10 @@
     "firebase": "^12.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "@tiptap/extension-underline": "^3.0.0"
+    "@tiptap/extension-underline": "^3.0.0",
+    "@gmcfall/yjs-firestore-provider": "^1.0.0-rc.5",
+    "@tiptap/extension-collaboration": "^3.0.0",
+    "yjs": "^13.6.27"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.0",

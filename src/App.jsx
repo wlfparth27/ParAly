@@ -5,7 +5,7 @@ import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyleKit } from '@tiptap/extension-text-style';
 import Underline from '@tiptap/extension-underline';
-import { collection, doc, limit, onSnapshot, orderBy, query, setDoc } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, runTransaction, setDoc } from 'firebase/firestore';
 import { onDisconnect, onValue, ref, remove, set } from 'firebase/database';
 import { firebaseDb, firebaseRealtimeDb } from './firebase.js';
 import { hydratePageFromCloud, serializePageForCloud, serializeVersionForCloud, stableJson } from './journal/cloudModel.js';
@@ -254,6 +254,7 @@ function App() {
   const seedAttemptedRef = useRef(false);
   const cloudPageSignaturesRef = useRef(new Map());
   const cloudHistoryIdsRef = useRef(new Set());
+  const historyCloudLoadedRef = useRef(false);
   const presenceWriterRef = useRef(null);
   const activePageIdRef = useRef(activePageId);
 
@@ -311,6 +312,7 @@ function App() {
     seedAttemptedRef.current = false;
     cloudPageSignaturesRef.current = new Map();
     cloudHistoryIdsRef.current = new Set();
+    historyCloudLoadedRef.current = false;
     setCloudState('connecting');
     setCloudError('');
 
@@ -325,10 +327,29 @@ function App() {
         seedAttemptedRef.current = true;
         setCloudState('seeding');
         const starterPages = makeStarterPages();
-        Promise.all(starterPages.map((page, index) => {
-          const payload = serializePageForCloud(page, index, auth.user);
-          return setDoc(doc(firebaseDb, 'journals', 'paraly', 'pages', String(page.id)), payload);
-        })).catch((error) => {
+        const markerRef = doc(firebaseDb, 'journals', 'paraly', 'settings', 'metadata');
+        runTransaction(firebaseDb, async (transaction) => {
+          const marker = await transaction.get(markerRef);
+          if (marker.exists()) return false;
+
+          // Seed marker and starter pages atomically so simultaneous first logins
+          // cannot overwrite an already-started notebook with partial starter state.
+          const pageRefs = starterPages.map((page) =>
+            doc(firebaseDb, 'journals', 'paraly', 'pages', String(page.id))
+          );
+          const existing = await Promise.all(pageRefs.map((pageRef) => transaction.get(pageRef)));
+          if (existing.some((pageDoc) => pageDoc.exists())) return false;
+
+          transaction.set(markerRef, {
+            initialized: true,
+            initializedBy: auth.user.uid,
+            initializedAt: Date.now(),
+          });
+          starterPages.forEach((page, index) => {
+            transaction.set(pageRefs[index], serializePageForCloud(page, index, auth.user));
+          });
+          return true;
+        }).catch((error) => {
           cloudReadyRef.current = false;
           setCloudState('error');
           setCloudError(error?.code === 'permission-denied'
@@ -368,6 +389,7 @@ function App() {
         cloudHistoryIdsRef.current.add(String(version.id));
         return version;
       });
+      historyCloudLoadedRef.current = true;
       historyRef.current = cloudHistory;
       setHistory(cloudHistory);
     }, () => {
@@ -415,7 +437,7 @@ function App() {
   }, [pages, cloudState, auth.user?.uid]);
 
   useEffect(() => {
-    if (cloudState !== 'ready' || !auth.user || !firebaseDb) return undefined;
+    if (cloudState !== 'ready' || !auth.user || !firebaseDb || !historyCloudLoadedRef.current) return undefined;
     const missing = history.filter((version) => !cloudHistoryIdsRef.current.has(String(version.id)));
     if (!missing.length) return undefined;
 
@@ -538,15 +560,27 @@ function App() {
 
   const handleObjectChange = useCallback((pageId, objectId, patch) => {
     const nextPages = pagesRef.current.map((page) => page.id === pageId
-      ? { ...page, updatedAt: Date.now(), objects: page.objects.map((object) => object.id === objectId ? { ...object, ...patch } : object) }
+      ? {
+        ...page,
+        updatedAt: Date.now(),
+        updatedBy: auth.user?.uid || page.updatedBy || '',
+        updatedByName: auth.user?.displayName || auth.user?.email || page.updatedByName || '',
+        objects: page.objects.map((object) => object.id === objectId ? { ...object, ...patch } : object),
+      }
       : page);
     pagesRef.current = nextPages;
     setPages(nextPages);
-  }, []);
+  }, [auth.user?.uid, auth.user?.displayName, auth.user?.email]);
 
   const addObjectToPage = (pageId, object) => {
     const nextPages = pagesRef.current.map((page) => page.id === pageId
-      ? { ...page, updatedAt: Date.now(), objects: [...page.objects, object] }
+      ? {
+        ...page,
+        updatedAt: Date.now(),
+        updatedBy: auth.user?.uid || page.updatedBy || '',
+        updatedByName: auth.user?.displayName || auth.user?.email || page.updatedByName || '',
+        objects: [...page.objects, object],
+      }
       : page);
     pagesRef.current = nextPages;
     setPages(nextPages);
@@ -623,7 +657,13 @@ function App() {
 
   const toggleBookmark = () => {
     const id = currentPageId();
-    const nextPages = pagesRef.current.map((page) => page.id === id ? { ...page, bookmarked: !page.bookmarked, updatedAt: Date.now() } : page);
+    const nextPages = pagesRef.current.map((page) => page.id === id ? {
+      ...page,
+      bookmarked: !page.bookmarked,
+      updatedAt: Date.now(),
+      updatedBy: auth.user?.uid || page.updatedBy || '',
+      updatedByName: auth.user?.displayName || auth.user?.email || page.updatedByName || '',
+    } : page);
     pagesRef.current = nextPages;
     setPages(nextPages);
   };
@@ -755,7 +795,7 @@ function App() {
     );
   };
 
-  if (auth.configured && auth.user && cloudState !== 'ready' && cloudState !== 'local') {
+  if (auth.configured && auth.user && cloudState !== 'ready') {
     return (
       <main className="auth-screen">
         <div className="auth-card">

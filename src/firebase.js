@@ -5,14 +5,28 @@ import { getDatabase } from 'firebase/database';
 
 const env = import.meta.env;
 
+// Firebase web configuration identifies this app/project; authorization is enforced
+// by Firebase Authentication and database Security Rules. Environment values may
+// override these public defaults for local preview deployments or separate projects.
+const publicConfig = {
+  apiKey: 'AIzaSyAk-0jHz3UckWsAFJjZd3IFpS_Ks8DzeDg',
+  authDomain: 'paraly-2bfb7.firebaseapp.com',
+  projectId: 'paraly-2bfb7',
+  storageBucket: 'paraly-2bfb7.firebasestorage.app',
+  messagingSenderId: '260846591273',
+  appId: '1:260846591273:web:cacc84500dc4e0eaf12b38',
+};
+
 export const firebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY,
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: env.VITE_FIREBASE_APP_ID,
-  databaseURL: env.VITE_FIREBASE_DATABASE_URL,
+  apiKey: env.VITE_FIREBASE_API_KEY || publicConfig.apiKey,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || publicConfig.authDomain,
+  projectId: env.VITE_FIREBASE_PROJECT_ID || publicConfig.projectId,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || publicConfig.storageBucket,
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || publicConfig.messagingSenderId,
+  appId: env.VITE_FIREBASE_APP_ID || publicConfig.appId,
+  // Copy the exact URL from the Realtime Database page. Its hostname depends on
+  // the database's region, so do not infer it from the Firebase console URL.
+  databaseURL: env.VITE_FIREBASE_DATABASE_URL || '',
 };
 
 export const isFirebaseConfigured = Boolean(
@@ -29,5 +43,5 @@ export const firebaseApp = isFirebaseConfigured
 export const firebaseAuth = firebaseApp ? getAuth(firebaseApp) : null;
 export const firebaseDb = firebaseApp ? getFirestore(firebaseApp) : null;
 export const firebaseRealtimeDb = firebaseApp && firebaseConfig.databaseURL
-  ? getDatabase(firebaseApp)
+  ? getDatabase(firebaseApp, firebaseConfig.databaseURL)
   : null;

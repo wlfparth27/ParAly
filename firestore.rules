@@ -19,6 +19,11 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /journals/paraly/settings/{settingId} {
+      allow get, create, update: if isJournalMember();
+      allow list, delete: if false;
+    }
+
     match /journals/paraly/pages/{pageId} {
       allow read, create, update, delete: if isJournalMember();
     }

@@ -19,9 +19,12 @@ export class FirestoreYjsProvider {
     this.active = true;
     this.flushTimer = null;
     this.flushInProgress = null;
+    this.localRevision = 0;
+    this.persistedRevision = 0;
 
     this.updateHandler = (_update, origin) => {
       if (!this.active || origin === this) return;
+      this.localRevision += 1;
       this.scheduleFlush();
     };
     this.ydoc.on('update', this.updateHandler);
@@ -48,15 +51,15 @@ export class FirestoreYjsProvider {
   }
 
   async flush() {
-    if (!this.active && this.ydoc.getXmlFragment('default').length === 0) return;
     if (this.flushInProgress) {
       await this.flushInProgress;
+      if (this.localRevision > this.persistedRevision) return this.flush();
       return;
     }
-
-    // Avoid creating a cloud state record from an untouched, not-yet-synced doc.
     if (this.ydoc.getXmlFragment('default').length === 0) return;
+    if (this.localRevision <= this.persistedRevision && this.persistedRevision !== 0) return;
 
+    const revisionAtStart = this.localRevision;
     const localState = Y.encodeStateAsUpdate(this.ydoc);
     this.flushInProgress = runTransaction(this.db, async (transaction) => {
       const current = await transaction.get(this.stateRef);
@@ -73,9 +76,11 @@ export class FirestoreYjsProvider {
       });
     }).finally(() => {
       this.flushInProgress = null;
+      this.persistedRevision = Math.max(this.persistedRevision, revisionAtStart);
     });
 
     await this.flushInProgress;
+    if (this.localRevision > this.persistedRevision) return this.flush();
   }
 
   destroy() {

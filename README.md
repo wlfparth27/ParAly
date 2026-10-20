@@ -29,21 +29,21 @@ The first playable frontend establishes the notebook experience:
 
 - **Firebase Authentication:** Google sign-in for the two invited accounts.
 - **Cloud Firestore:** journal structure, metadata, sealed-letter state, and durable version snapshots.
-- **Cloud Storage for Firebase:** original photos and thumbnails.
-- **Firebase Realtime Database:** online presence and the transport/storage layer for collaborative updates where appropriate.
+- **Google Drive API:** journal photo files, stored against the existing Google account's Google One / Drive quota.
+- **Firebase Realtime Database:** online presence and collaboration coordination where appropriate.
 - **React + Tiptap + a Yjs-based collaboration layer:** concurrent editing without silently replacing the other person's changes.
-- **Vercel:** frontend hosting.
+- **Vercel:** frontend hosting and a small server-side API to access Drive securely.
 
-The implementation will not use Liveblocks file storage for photographs. Photos belong in Cloud Storage for Firebase. We will only add a separate collaboration vendor if it proves materially better after comparing reliability, limits, and costs.
+The implementation will not use Liveblocks file storage, Cloudflare R2, or Firebase Storage for journal photos in the zero-new-spend version. Cloud Storage for Firebase requires a Blaze billing account for new buckets and continued access, and R2 requires a billing profile/payment method even though it has a limited free tier. Instead, we plan to store compressed journal photos in a dedicated folder in the existing Google Drive account that has the Google One subscription. A server-side API must authenticate the journal member, access Drive using a securely stored owner OAuth credential, and never expose that credential to the browser. Photo storage is still limited by the remaining Google One quota, and Drive API usage limits still apply. We should not promise unlimited storage.
 
 ## Security and storage notes
 
 The current Google sign-in allowlist is a front-end gate for the setup milestone, not a security boundary for cloud data. Before any private journal data is written to Firebase, Firestore, Realtime Database, and Storage Security Rules must independently enforce that only the two approved members can read or change it. Do not deploy cloud storage with open rules.
 
-Google One storage is for a personal Google Account's Drive, Gmail, and Google Photos quota. It does not increase a Firebase project's Cloud Storage, Firestore, or Realtime Database quota. Firebase usage is managed and billed separately through the Firebase / Google Cloud project.
+Google One storage is shared across the subscriber's Google Drive, Gmail, and Google Photos. For this no-new-spend plan, journal photos will use the Drive space already included in the existing subscription. This is a finite quota, not unlimited storage; the app should show available/used capacity where practical and stop uploads safely before it runs out. Compress uploads and create thumbnails to use the quota efficiently.
 
-Firebase's Cloud Storage setup may require the project to be on the Blaze pay-as-you-go plan even though no-cost usage quotas can still apply. We'll configure budget alerts and review projected usage before enabling billing; a Google One subscription is not a substitute for a Firebase billing account.
+Do not provision Firebase Storage or Cloudflare R2 for the zero-spend milestone: Firebase Storage requires a Blaze billing account, and Cloudflare requires a payment method for an R2 subscription. We will avoid those services unless Parth explicitly chooses a spending-enabled plan later.
 
 ## Current limitations
 
-This is still a frontend preview. Without Firebase environment values the site opens in local-preview mode, saving drafts to the current browser. With Firebase Auth configured, the Google sign-in screen is enabled, but the journal content, photos, real-time collaboration, member-enforced security rules, and cloud version history are not yet connected. These will be implemented as separate, testable milestones.
+This is still a frontend preview. Without Firebase environment values the site opens in local-preview mode, saving drafts to the current browser. With Firebase Auth configured, the Google sign-in screen is enabled, but journal content, Drive photo storage, real-time collaboration, member-enforced security rules, and cloud version history are not yet connected. Drive storage requires a separate owner-account OAuth connection in the backend; the Firebase Google sign-in token alone must not be treated as Drive access. These will be implemented as separate, testable milestones.

@@ -8,7 +8,7 @@ import { collection, doc, limit, onSnapshot, orderBy, query, runTransaction, set
 import { onDisconnect, onValue, ref, remove, set } from 'firebase/database';
 import { firebaseApp, firebaseDb, firebaseRealtimeDb } from './firebase.js';
 import { hydratePageFromCloud, serializePageForCloud, serializeVersionForCloud, stableJson } from './journal/cloudModel.js';
-import { uploadJournalPhoto, fetchDrivePreview } from './drive/driveClient.js';
+import { uploadJournalPhoto, fetchDrivePreview, deleteDrivePhoto } from './drive/driveClient.js';
 import { useAuth } from './auth/AuthProvider.jsx';
 
 const PAGE_STORAGE_KEY = 'paraly-pages-v1';
@@ -124,7 +124,7 @@ function DrivePhotoImage({ object, alt, className = '' }) {
   return <img className={className} src={src} alt={alt || object.caption || 'A photograph in the journal'} draggable="false" />;
 }
 
-function PageObjects({ page, onObjectChange, pageRef }) {
+function PageObjects({ page, onObjectChange, onObjectDelete, pageRef }) {
   const dragRef = useRef(null);
 
   const beginDrag = (event, object) => {
@@ -175,6 +175,14 @@ function PageObjects({ page, onObjectChange, pageRef }) {
                 transform: 'rotate(' + (object.rotation || 0) + 'deg)',
               }}
             >
+              <button
+                className="object-delete-button"
+                type="button"
+                title="Delete sticky note"
+                aria-label="Delete sticky note"
+                onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+                onClick={(event) => { event.preventDefault(); event.stopPropagation(); onObjectDelete(page.id, object.id); }}
+              >×</button>
               <div className="sticky-note-grip" onPointerDown={(event) => beginDrag(event, object)}>
                 <span>STICKY NOTE</span><span aria-hidden="true">⠿</span>
               </div>
@@ -201,6 +209,14 @@ function PageObjects({ page, onObjectChange, pageRef }) {
               onPointerDown={(event) => beginDrag(event, object)}
               title="Drag to move photograph"
             >
+              <button
+                className="object-delete-button"
+                type="button"
+                title="Delete photograph"
+                aria-label="Delete photograph"
+                onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+                onClick={(event) => { event.preventDefault(); event.stopPropagation(); onObjectDelete(page.id, object.id); }}
+              >×</button>
               <DrivePhotoImage object={object} alt={object.caption || 'A photograph in the journal'} />
               {object.driveWebViewLink && (
                 <a
@@ -329,7 +345,7 @@ function JournalPage({
       <div className="page-content">
         <EditorContent editor={editor} />
       </div>
-      <PageObjects page={page} onObjectChange={onObjectChange} pageRef={pageRef} />
+      <PageObjects page={page} onObjectChange={onObjectChange} onObjectDelete={onObjectDelete} pageRef={pageRef} />
       <div className="page-footer">
         <span>{page.bookmarked ? '♡ SAVED' : 'P · A'}</span>
         <span>{String(pageNumber).padStart(3, '0')}</span>
@@ -684,6 +700,44 @@ function App() {
     pagesRef.current = nextPages;
     setPages(nextPages);
   }, [auth.user?.uid, auth.user?.displayName, auth.user?.email]);
+
+  const handleObjectDelete = useCallback(async (pageId, objectId) => {
+    const page = pagesRef.current.find((item) => item.id === pageId);
+    const target = page?.objects.find((object) => object.id === objectId);
+    if (!target) return;
+
+    const kind = target.type === 'photo' ? 'photograph' : 'sticky note';
+    const confirmed = window.confirm('Delete this ' + kind + ' from the journal?');
+    if (!confirmed) return;
+
+    // Remove it from the journal immediately; the existing Firestore page sync
+    // persists the updated object list for both members.
+    const nextPages = pagesRef.current.map((item) => item.id === pageId
+      ? {
+        ...item,
+        updatedAt: Date.now(),
+        updatedBy: auth.user?.uid || item.updatedBy || '',
+        updatedByName: auth.user?.displayName || auth.user?.email || item.updatedByName || '',
+        objects: item.objects.filter((object) => object.id !== objectId),
+      }
+      : item);
+    pagesRef.current = nextPages;
+    setPages(nextPages);
+
+    if (target.type === 'photo') {
+      const driveIds = [...new Set([target.drivePreviewFileId, target.driveOriginalFileId].filter(Boolean))];
+      if (driveIds.length) {
+        try {
+          await Promise.all(driveIds.map((fileId) => deleteDrivePhoto(fileId)));
+          setSaveState(cloudState === 'ready' ? 'Photograph removed · journal syncing' : 'Photograph removed');
+        } catch {
+          // The photo is removed from the notebook even if Drive is temporarily
+          // unavailable. Warn that the underlying managed file may need cleanup.
+          window.alert('The photograph was removed from the journal, but its Drive file could not be deleted. Check the connection and try again later.');
+        }
+      }
+    }
+  }, [auth.user?.uid, auth.user?.displayName, auth.user?.email, cloudState]);
 
   const addObjectToPage = (pageId, object) => {
     const nextPages = pagesRef.current.map((page) => page.id === pageId
@@ -1148,6 +1202,7 @@ function App() {
                   onRestoreApplied={(nonce) => setPendingRestore((current) => current?.nonce === nonce ? null : current)}
                   onContentChange={handleContentChange}
                   onObjectChange={handleObjectChange}
+                  onObjectDelete={handleObjectDelete}
                   onEditorFocus={(id, editor) => { setActivePageId(id); setActiveEditor(editor); }}
                 />
               );

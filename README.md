@@ -28,13 +28,11 @@ Firestore currently has a no-cost quota of 1 GiB stored data, 50,000 document re
 For the full Firebase console walkthrough, see [SETUP.md](./SETUP.md).
 
 1. Install a current Node.js LTS release.
-2. Create a Firebase project and register a Web app.
-3. In Firebase Authentication, enable Google sign-in and add both local/deployed domains under Authorized domains.
-4. Create one Cloud Firestore database. Choose the location carefully; database location cannot simply be changed later.
-5. Create Firebase Realtime Database and copy its URL.
-6. Copy `.env.example` to `.env.local`. Put the Firebase Web app config into the `VITE_FIREBASE_*` values.
-7. Set `VITE_ALLOWED_EMAILS` to exactly the two Google account email addresses, separated by a comma. Set `PARALY_MEMBER_EMAILS` to the same two addresses.
-8. Run `npm install`, then `npm run dev` for the frontend preview. For the full-stack Drive API routes, link the checkout to Vercel and run `npx vercel dev` as described in [SETUP.md](./SETUP.md).
+2. Use the existing Firebase project `paraly-2bfb7`; its public Web app configuration is already in `src/firebase.js`.
+3. Enable Google sign-in and confirm local/deployed domains under Authorized domains.
+4. Create Cloud Firestore if it does not already exist. Copy the exact HTTPS Realtime Database URL from the console to `VITE_FIREBASE_DATABASE_URL` in `.env.local`.
+5. Set `PARALY_MEMBER_EMAILS` to the two Google account email addresses. `VITE_ALLOWED_EMAILS` is optional and is only an additional UI check.
+6. Run `npm install`, then `npm run dev` for the frontend preview. For the full-stack Drive API routes, link the checkout to Vercel and run `npx vercel dev` as described in [SETUP.md](./SETUP.md).
 9. Both people must sign in once through Google so Firebase Authentication creates their user records. Until membership is provisioned, the app intentionally won't show the cloud journal.
 10. Download a Firebase service-account key for local setup only. Set `GOOGLE_APPLICATION_CREDENTIALS` to its file path in `.env.local`. Never commit that key.
 11. Run `npm run seed:members`. This uses the Admin SDK locally to create the two membership records in Firestore and Realtime Database. The script refuses to run unless it has exactly two email addresses.
@@ -64,4 +62,4 @@ The Drive photo-upload flow is scaffolded. It initiates a resumable Drive sessio
 
 ## Current limitations
 
-This branch is still a work in progress. Actual cloud behaviour needs a configured Firebase project, deployed rules, and seeded memberships. The GitHub Actions build and server-script syntax check should pass before merging. Photo upload routes have not yet been tested against an actual Google Drive OAuth setup. We still need to test Yjs initialisation, simultaneous editing, reconnects, version restores, Drive upload CORS, membership enforcement, and free-tier read/write usage against real test accounts.
+This branch is still a work in progress. Actual cloud behaviour needs Google sign-in enabled, Cloud Firestore created, the exact Realtime Database URL configured, deployed rules, and seeded memberships. The GitHub Actions build and server-script syntax check should pass before merging. Photo upload routes have not yet been tested against an actual Google Drive OAuth setup. We still need to test Yjs initialisation, simultaneous editing, reconnects, version restores, Drive upload CORS, membership enforcement, and free-tier read/write usage against real test accounts.

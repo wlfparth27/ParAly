@@ -12,6 +12,7 @@ import { collection, doc, limit, onSnapshot, orderBy, query, runTransaction, set
 import { onDisconnect, onValue, ref, remove, set } from 'firebase/database';
 import { firebaseApp, firebaseDb, firebaseRealtimeDb } from './firebase.js';
 import { hydratePageFromCloud, serializePageForCloud, serializeVersionForCloud, stableJson } from './journal/cloudModel.js';
+import { uploadJournalPhoto, fetchDrivePreview, deleteDrivePhoto } from './drive/driveClient.js';
 import { useAuth } from './auth/AuthProvider.jsx';
 
 const PAGE_STORAGE_KEY = 'paraly-pages-v1';
@@ -77,11 +78,62 @@ function ToolButton({ label, title, onClick, active = false, disabled = false })
   );
 }
 
+function DrivePhotoImage({ object, alt, className = '' }) {
+  const [src, setSrc] = useState(() => object.src?.startsWith('data:') ? object.src : '');
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let createdUrl = '';
+
+    if (object.src?.startsWith('data:')) {
+      setSrc(object.src);
+      setFailed(false);
+      return () => { cancelled = true; };
+    }
+
+    setSrc('');
+    setFailed(false);
+    if (!object.drivePreviewFileId) {
+      return () => { cancelled = true; };
+    }
+
+    fetchDrivePreview(object.drivePreviewFileId)
+      .then((blob) => {
+        createdUrl = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(createdUrl);
+          return;
+        }
+        setSrc(createdUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [object.src, object.drivePreviewFileId]);
+
+  if (!src) {
+    const message = failed
+      ? 'PHOTO UNAVAILABLE'
+      : object.drivePreviewFileId
+        ? 'LOADING PHOTOGRAPH…'
+        : 'LOCAL PHOTO · THIS DEVICE ONLY';
+    return <div className={'photo-placeholder ' + className}>{message}</div>;
+  }
+
+  return <img className={className} src={src} alt={alt || object.caption || 'A photograph in the journal'} draggable="false" />;
+}
+
 function PageObjects({ page, onObjectChange, pageRef }) {
   const dragRef = useRef(null);
 
   const beginDrag = (event, object) => {
-    if (event.target.closest('textarea, input, button, [contenteditable="true"]')) return;
+    if (event.target.closest('textarea, input, button, a, [contenteditable="true"]')) return;
     event.preventDefault();
     event.stopPropagation();
     const bounds = pageRef.current?.getBoundingClientRect();
@@ -154,9 +206,19 @@ function PageObjects({ page, onObjectChange, pageRef }) {
               onPointerDown={(event) => beginDrag(event, object)}
               title="Drag to move photograph"
             >
-              {object.src
-                ? <img src={object.src} alt={object.caption || 'A photograph in the journal'} draggable="false" />
-                : <div className="photo-placeholder">PHOTO STORED ON DEVICE<br /><span>DRIVE SYNC COMING NEXT</span></div>}
+              <DrivePhotoImage object={object} alt={object.caption || 'A photograph in the journal'} />
+              {object.driveWebViewLink && (
+                <a
+                  className="photo-open-original"
+                  href={object.driveWebViewLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  title="Open the original photograph in Google Drive"
+                >
+                  ORIGINAL ↗
+                </a>
+              )}
               {object.frame !== 'plain' && (
                 <div
                   className="photo-caption"
@@ -773,28 +835,47 @@ function App() {
       window.alert('Please choose an image file.');
       return;
     }
-    if (file.size > 12 * 1024 * 1024) {
-      window.alert('That file is quite large for this local preview. Choose a photo under 12 MB.');
+    if (file.size > 100 * 1024 * 1024) {
+      window.alert('Please choose a photo smaller than 100 MB.');
       return;
     }
+
+    let previewSrc = '';
+    let driveAssets = {};
+    let completed = false;
     try {
-      const src = await resizeImage(file);
+      previewSrc = await resizeImage(file);
+      if (auth.configured && auth.user) {
+        setSaveState('Uploading photograph to Drive…');
+        const previewBlob = await (await fetch(previewSrc)).blob();
+        driveAssets = await uploadJournalPhoto(file, previewBlob);
+      }
+
       const pageId = currentPageId();
       const count = pagesRef.current.find((page) => page.id === pageId)?.objects.length || 0;
       addObjectToPage(pageId, {
         id: 'photo-' + Date.now(),
         type: 'photo',
-        src,
+        src: driveAssets.src ?? previewSrc,
+        ...driveAssets,
         caption: '',
         frame: 'polaroid',
         left: 55,
         top: 52 + (count % 3) * 3,
         rotation: count % 2 ? 3 : -4,
       });
-    } catch {
-      window.alert('That image could not be opened. Try a JPG or PNG.');
+      completed = true;
+      setSaveState(auth.configured && auth.user ? 'Photo saved to Drive · syncing journal' : 'Saved on this device');
+    } catch (error) {
+      const message = error?.message || 'That image could not be added.';
+      window.alert(message.includes('Drive') || message.includes('ParAly') || message.includes('Google')
+        ? message
+        : 'That image could not be prepared. Try a JPG or PNG.');
+    } finally {
+      if (!completed && cloudState === 'ready') setSaveState('Synced with Firebase');
     }
   };
+
 
   const toggleBookmark = () => {
     const id = currentPageId();
@@ -901,7 +982,7 @@ function App() {
         {panel === 'gallery' && (
           photos.length ? <div className="gallery-grid">{photos.map((photo) => (
             <button className="gallery-item" key={photo.id} onClick={() => goToPage(pages.findIndex((page) => page.id === photo.pageId))}>
-              <img src={photo.src} alt={photo.caption || 'Journal photo'} />
+              <DrivePhotoImage object={photo} alt={photo.caption || 'Journal photo'} />
               <span>{photo.caption || 'Page ' + photo.pageId}</span>
             </button>
           ))}</div> : <div className="empty-panel"><span>✳</span><p>Your photographs will collect here.</p><small>Add a photo to a page and it will appear in this gallery.</small></div>

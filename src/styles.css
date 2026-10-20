@@ -609,6 +609,44 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .paper-page--active::after { content: ''; position: absolute; inset: 7px; border: 1px solid rgba(119,131,131,.07); pointer-events: none; }
 @keyframes page-turn-in { from { opacity: .3; transform: rotateY(-9deg); } to { opacity: 1; transform: rotateY(0deg); } }
 .paper-grain { position: absolute; inset: 0; opacity: .32; pointer-events: none; background: repeating-linear-gradient(90deg, transparent 0 7px, rgba(111,99,73,.018) 8px, transparent 9px 14px); mix-blend-mode: multiply; }
+
+.page-collab-overlay {
+  position: absolute;
+  z-index: 7;
+  inset: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px;
+  background: rgba(244, 240, 230, .94);
+  border: 1px solid rgba(133, 135, 122, .13);
+  color: #475a67;
+  text-align: center;
+  pointer-events: auto;
+}
+.page-collab-overlay .page-collab-symbol {
+  display: grid;
+  place-items: center;
+  width: 33px;
+  height: 33px;
+  border: 1px solid rgba(82,108,128,.24);
+  border-radius: 50%;
+  color: #71899a;
+  font: 20px 'Cormorant Garamond', serif;
+}
+.page-collab-overlay strong {
+  color: #405567;
+  font: 500 24px/1.1 'Cormorant Garamond', serif;
+}
+.page-collab-overlay small {
+  max-width: 225px;
+  color: #839096;
+  font: 10px/1.7 'DM Sans', sans-serif;
+}
+.page-collab-overlay .page-collab-symbol:not(:has(+ strong)) { display: none; }
+
 .page-content { position: relative; z-index: 1; height: 100%; overflow: auto; scrollbar-width: thin; scrollbar-color: rgba(87,102,109,.22) transparent; }
 .page-editor { min-height: 100%; outline: none; font: 400 18px/1.82 'Cormorant Garamond', serif; color: #3a4650; letter-spacing: .005em; }
 .page-editor p { margin: 0 0 20px; }

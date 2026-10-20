@@ -57,7 +57,7 @@ export class FirestoreYjsProvider {
       return;
     }
     if (this.ydoc.getXmlFragment('default').length === 0) return;
-    if (this.localRevision <= this.persistedRevision && this.persistedRevision !== 0) return;
+    if (this.localRevision <= this.persistedRevision) return;
 
     const revisionAtStart = this.localRevision;
     const localState = Y.encodeStateAsUpdate(this.ydoc);
@@ -74,12 +74,14 @@ export class FirestoreYjsProvider {
         update: Bytes.fromUint8Array(mergedState),
         updatedAt: Date.now(),
       });
-    }).finally(() => {
-      this.flushInProgress = null;
-      this.persistedRevision = Math.max(this.persistedRevision, revisionAtStart);
     });
 
-    await this.flushInProgress;
+    try {
+      await this.flushInProgress;
+      this.persistedRevision = Math.max(this.persistedRevision, revisionAtStart);
+    } finally {
+      this.flushInProgress = null;
+    }
     if (this.localRevision > this.persistedRevision) return this.flush();
   }
 

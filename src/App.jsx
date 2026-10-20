@@ -4,9 +4,6 @@ import StarterKit from '@tiptap/starter-kit';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyleKit } from '@tiptap/extension-text-style';
-import Collaboration from '@tiptap/extension-collaboration';
-import * as Y from 'yjs';
-import { FirestoreYjsProvider } from './journal/firestoreYjsProvider.js';
 import { collection, doc, limit, onSnapshot, orderBy, query, runTransaction, setDoc } from 'firebase/firestore';
 import { onDisconnect, onValue, ref, remove, set } from 'firebase/database';
 import { firebaseApp, firebaseDb, firebaseRealtimeDb } from './firebase.js';
@@ -251,148 +248,29 @@ function JournalPage({
   onEditorFocus,
 }) {
   const pageRef = useRef(null);
-  const seededRef = useRef(false);
   const appliedRestoreNonceRef = useRef(null);
-  const [collaborationSession, setCollaborationSession] = useState(null);
-  const [collaborationAttempt, setCollaborationAttempt] = useState(0);
-  const [collaborationState, setCollaborationState] = useState(cloudEnabled ? 'connecting' : 'local');
-  const [collaborationError, setCollaborationError] = useState('');
+  const [collaborationState, setCollaborationState] = useState(cloudEnabled ? 'ready' : 'local');
 
+  // The Firestore page document is the live shared source of truth for now.
+  // Keep one stable Tiptap editor per page instead of swapping editors while a
+  // Yjs session attaches. That swap was leaving stale editor references behind
+  // and causing the commands-null crash that blanked the whole notebook.
   useEffect(() => {
-    if (!cloudEnabled || !user?.uid || !firebaseApp || !firebaseDb) {
-      setCollaborationSession(null);
-      setCollaborationState('local');
-      setCollaborationError('');
-      return undefined;
-    }
+    setCollaborationState(cloudEnabled ? 'ready' : 'local');
+  }, [cloudEnabled]);
 
-    let cancelled = false;
-    let retryTimer = null;
-    seededRef.current = false;
-    setCollaborationSession(null);
-    setCollaborationState('connecting');
-    setCollaborationError('');
+  const editorExtensions = useMemo(() => [
+    StarterKit,
+    TextStyleKit,
+    Highlight.configure({ multicolor: true }),
+    TextAlign.configure({ types: ['heading', 'paragraph'] }),
+  ], []);
 
-    const ydoc = new Y.Doc();
-    const provider = new FirestoreYjsProvider(
-      firebaseDb,
-      ydoc,
-      ['journals', 'paraly', 'pages', String(page.id)],
-      {
-        onSynced: () => {
-          if (!cancelled) {
-            if (retryTimer) window.clearTimeout(retryTimer);
-            setCollaborationState('ready');
-            setCollaborationError('');
-          }
-        },
-        onError: (error) => {
-          if (!cancelled) {
-            if (retryTimer) window.clearTimeout(retryTimer);
-            setCollaborationState('error');
-            setCollaborationError(error?.code === 'permission-denied'
-              ? 'Firebase denied access to this page’s shared text. Check the deployed Firestore rules.'
-              : 'The shared text connection failed. If you use Brave Shields or an ad blocker, allow Firebase for this site and reload.');
-          }
-        },
-      },
-    );
-
-    const pageRef = doc(firebaseDb, 'journals', 'paraly', 'pages', String(page.id));
-    const stateRef = doc(firebaseDb, 'journals', 'paraly', 'pages', String(page.id), 'yjs', 'state');
-    runTransaction(firebaseDb, async (transaction) => {
-      // A previous attempt may have marked the page initialised before it
-      // crashed, leaving no Yjs state. The actual state document is the source
-      // of truth: if it is missing, safely claim a lease and seed the page text.
-      const snapshot = await transaction.get(pageRef);
-      if (!snapshot.exists()) throw new Error('The page no longer exists in the shared journal.');
-      const stateSnapshot = await transaction.get(stateRef);
-      if (stateSnapshot.exists()) return { shouldSeed: false, waitingForSeed: false };
-
-      const pageData = snapshot.data();
-      const now = Date.now();
-      const lockExpiry = Number(pageData.collaborationSeedLockExpiresAt) || 0;
-      if (lockExpiry > now) {
-        return { shouldSeed: false, waitingForSeed: true, waitForMs: lockExpiry - now + 500 };
-      }
-
-      const seedNonce = user.uid + '-' + now + '-' + Math.random().toString(36).slice(2, 10);
-      transaction.update(pageRef, {
-        collaborationInitialized: true,
-        collaborationInitializedBy: user.uid,
-        collaborationInitializedAt: Number(pageData.collaborationInitializedAt) || now,
-        collaborationSeedLockOwner: user.uid,
-        collaborationSeedLockNonce: seedNonce,
-        collaborationSeedLockExpiresAt: now + 30000,
-      });
-      return { shouldSeed: true, waitingForSeed: false, seedNonce };
-    }).then((result) => {
-      if (cancelled) return;
-      if (result.waitingForSeed) {
-        // Another session may have crashed after taking the seed lease. Retry
-        // automatically as soon as that lease expires instead of getting stuck
-        // forever behind an abandoned lock.
-        retryTimer = window.setTimeout(() => {
-          if (!cancelled) setCollaborationAttempt((attempt) => attempt + 1);
-        }, Math.max(1000, result.waitForMs || 1000));
-      }
-
-      const seedThisPage = result.shouldSeed && ydoc.getXmlFragment('default').length === 0;
-      setCollaborationSession({ doc: ydoc, provider, shouldSeed: seedThisPage, seedNonce: result.seedNonce || null });
-      if (seedThisPage) setCollaborationState('seeding');
-      else if (ydoc.getXmlFragment('default').length > 0) setCollaborationState('ready');
-      // If another tab holds the seed lease, stay in the connecting state until
-      // its Yjs state arrives. A retry is scheduled if that lease was abandoned.
-    }).catch((error) => {
-      if (cancelled) return;
-      if (retryTimer) window.clearTimeout(retryTimer);
-      setCollaborationState('error');
-      setCollaborationError(error?.code === 'permission-denied'
-        ? 'The shared page is not authorised for this account. Verify the deployed Firestore rules.'
-        : 'The collaborative text could not be opened. Refresh the journal and try again.');
-    });
-
-    const timeout = window.setTimeout(() => {
-      if (!cancelled) {
-        setCollaborationState((current) => {
-          if (current !== 'connecting') return current;
-          setCollaborationError('This page has not received its shared text yet. Check the connection and refresh.');
-          return 'error';
-        });
-      }
-    }, 18000);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeout);
-      if (retryTimer) window.clearTimeout(retryTimer);
-      provider.destroy();
-      ydoc.destroy();
-    };
-  }, [cloudEnabled, user?.uid, page.id, refreshKey, collaborationAttempt]);
-
-  const editorExtensions = useMemo(() => {
-    const extensions = [
-      StarterKit.configure(cloudEnabled ? { undoRedo: false } : {}),
-      TextStyleKit,
-      Highlight.configure({ multicolor: true }),
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-    ];
-    if (cloudEnabled && collaborationSession) {
-      extensions.push(Collaboration.configure({ document: collaborationSession.doc }));
-    }
-    return extensions;
-  }, [cloudEnabled, collaborationSession?.doc]);
-
-  // Tiptap v3 reads options.immediatelyRender inside useEditor, so do not
-  // pass null while a cloud collaboration session is still connecting. Create
-  // a disabled, empty editor during that brief state; the dependency list makes
-  // useEditor recreate it with the collaborative document when the session arrives.
-  const editorOptions = {
+  const editor = useEditor({
     immediatelyRender: false,
     extensions: editorExtensions,
-    ...(cloudEnabled ? {} : { content: page.content }),
-    editable: !cloudEnabled || collaborationState === 'ready' || collaborationSession?.shouldSeed === true,
+    content: page.content || '<p></p>',
+    editable: true,
     editorProps: {
       attributes: {
         class: 'page-editor',
@@ -400,76 +278,58 @@ function JournalPage({
         'aria-label': 'Editable journal page ' + pageNumber,
       },
     },
-    onFocus: ({ editor: focusedEditor }) => onEditorFocus(page.id, focusedEditor),
-    onUpdate: ({ editor: updatedEditor }) => onContentChange(page.id, updatedEditor.getHTML()),
-  };
+    onFocus: ({ editor: focusedEditor }) => {
+      if (!focusedEditor.isDestroyed) onEditorFocus(page.id, focusedEditor);
+    },
+    onUpdate: ({ editor: updatedEditor }) => {
+      if (!updatedEditor.isDestroyed) onContentChange(page.id, updatedEditor.getHTML());
+    },
+  }, [page.id, refreshKey]);
 
-  const editor = useEditor(editorOptions, [page.id, refreshKey, collaborationSession?.doc, cloudEnabled]);
-
-  // Keep the parent's toolbar reference aligned with the live editor. Tiptap
-  // recreates the editor when the collaborative Y.Doc attaches; an old handle
-  // must not remain selected after that instance has been destroyed.
+  // Apply remote Firestore updates to the existing editor without generating a
+  // second write. The local editor is not re-created as cloud state changes.
   useEffect(() => {
-    if (!active) return;
-    onEditorFocus(page.id, editor && !editor.isDestroyed ? editor : null);
-  }, [active, editor, page.id]);
-
-  useEffect(() => {
-    if (editor) {
-      const canEdit = !cloudEnabled || collaborationState === 'ready' || collaborationSession?.shouldSeed === true;
-      editor.setEditable(canEdit);
+    if (!editor || editor.isDestroyed || !editor.view?.dom?.isConnected) return;
+    editor.setEditable(true);
+    const nextContent = page.content || '<p></p>';
+    if (editor.getHTML() !== nextContent) {
+      try {
+        editor.commands.setContent(nextContent, { emitUpdate: false });
+      } catch {
+        // Ignore a teardown race; the next Firestore snapshot will retry.
+      }
     }
-  }, [editor, cloudEnabled, collaborationState, collaborationSession?.shouldSeed]);
+  }, [editor, page.content, refreshKey]);
 
   useEffect(() => {
-    if (!cloudEnabled && editor && editor.getHTML() !== page.content) {
-      editor.commands.setContent(page.content || '<p></p>', { emitUpdate: false });
-    }
-  }, [editor, page.content, refreshKey, cloudEnabled]);
-
-  useEffect(() => {
-    if (!cloudEnabled || !editor || !collaborationSession?.shouldSeed || seededRef.current) return;
-    // Only the first client that atomically claims initialisation populates the Yjs
-    // document. Other clients wait for the provider to deliver this state.
-    editor.commands.setContent(page.content || '<p></p>', { emitUpdate: false });
-    seededRef.current = true;
-    setCollaborationState('ready');
-    // Flush immediately instead of waiting only on the debounce timer. If the
-    // app is closed or the page changes quickly, the starter text still gets a
-    // chance to reach Firestore.
-    collaborationSession.provider?.flush().catch(() => {
-      setCollaborationState('error');
-      setCollaborationError('The starter text could not be saved to Firebase. Check your connection and Firestore rules.');
-    });
-  }, [editor, cloudEnabled, collaborationSession?.shouldSeed, collaborationSession?.provider, page.content]);
-
-  useEffect(() => {
-    if (!cloudEnabled || !editor || collaborationState !== 'ready') return;
+    if (!cloudEnabled || !editor || editor.isDestroyed || collaborationState !== 'ready') return;
     if (!pendingRestore || Number(pendingRestore.pageId) !== Number(page.id)) return;
     if (appliedRestoreNonceRef.current === pendingRestore.nonce) return;
-    editor.commands.setContent(pendingRestore.content || '<p></p>', { emitUpdate: false });
-    appliedRestoreNonceRef.current = pendingRestore.nonce;
-    onRestoreApplied?.(pendingRestore.nonce);
+
+    try {
+      editor.commands.setContent(pendingRestore.content || '<p></p>', { emitUpdate: false });
+      appliedRestoreNonceRef.current = pendingRestore.nonce;
+      onRestoreApplied?.(pendingRestore.nonce);
+    } catch {
+      // A restore should never crash the notebook if an editor is re-mounted.
+    }
   }, [cloudEnabled, editor, collaborationState, pendingRestore, page.id, onRestoreApplied]);
 
   return (
     <section
-      className={'paper-page' + (active ? ' paper-page--active' : '') + (cloudEnabled && collaborationState !== 'ready' ? ' paper-page--collaboration-waiting' : '')}
+      className={'paper-page' + (active ? ' paper-page--active' : '')}
       ref={pageRef}
-      onClick={() => editor && onEditorFocus(page.id, editor)}
+      onClick={() => {
+        if (editor && !editor.isDestroyed && editor.view?.dom?.isConnected) {
+          onEditorFocus(page.id, editor);
+        }
+      }}
     >
       <div className="paper-grain" aria-hidden="true" />
       <div className="page-content">
         <EditorContent editor={editor} />
       </div>
       <PageObjects page={page} onObjectChange={onObjectChange} pageRef={pageRef} />
-      {cloudEnabled && collaborationState !== 'ready' && (
-        <div className="page-collab-overlay" role="status">
-          <span className="page-collab-symbol">{collaborationState === 'error' ? '!' : '↻'}</span>
-          <strong>{collaborationState === 'error' ? 'Page needs attention' : 'Preparing this page'}</strong>
-          <small>{collaborationState === 'error' ? collaborationError : 'Connecting the shared text so neither person overwrites the other.'}</small>
-        </div>
-      )}
       <div className="page-footer">
         <span>{page.bookmarked ? '♡ SAVED' : 'P · A'}</span>
         <span>{String(pageNumber).padStart(3, '0')}</span>

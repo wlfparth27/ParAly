@@ -1148,7 +1148,7 @@ function App() {
         <span className="preview-banner-mark">i</span>
         <span>
           {cloudState === 'ready'
-            ? <><strong>Shared journal connected</strong> — text, page layout, and sticky notes sync through Firebase. Photos are kept locally until secure Drive uploads are connected.</>
+            ? <><strong>Shared journal connected</strong> — text and sticky notes sync through Firebase. Photo sharing activates after the private Drive OAuth settings are configured.</>
             : auth.configured
               ? <><strong>{cloudState === 'error' ? 'Cloud connection needs setup' : 'Connecting your journal'}</strong> — {cloudState === 'error' ? cloudError : 'Opening the shared pages and checking membership…'}</>
               : <><strong>Private preview</strong> — drafts and photographs are saved in this browser until Firebase and Drive are configured.</>}

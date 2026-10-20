@@ -5,6 +5,10 @@ import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyleKit } from '@tiptap/extension-text-style';
 import Underline from '@tiptap/extension-underline';
+import { collection, doc, limit, onSnapshot, orderBy, query, setDoc } from 'firebase/firestore';
+import { onDisconnect, onValue, ref, remove, set } from 'firebase/database';
+import { firebaseDb, firebaseRealtimeDb } from './firebase.js';
+import { hydratePageFromCloud, serializePageForCloud, serializeVersionForCloud, stableJson } from './journal/cloudModel.js';
 import { useAuth } from './auth/AuthProvider.jsx';
 
 const PAGE_STORAGE_KEY = 'paraly-pages-v1';
@@ -147,7 +151,9 @@ function PageObjects({ page, onObjectChange, pageRef }) {
               onPointerDown={(event) => beginDrag(event, object)}
               title="Drag to move photograph"
             >
-              <img src={object.src} alt={object.caption || 'A photograph in the journal'} draggable="false" />
+              {object.src
+                ? <img src={object.src} alt={object.caption || 'A photograph in the journal'} draggable="false" />
+                : <div className="photo-placeholder">PHOTO STORED ON DEVICE<br /><span>DRIVE SYNC COMING NEXT</span></div>}
               {object.frame !== 'plain' && (
                 <div
                   className="photo-caption"
@@ -196,7 +202,7 @@ function JournalPage({
   );
 
   useEffect(() => {
-    if (editor && editor.getHTML() !== page.content && refreshKey > 0) {
+    if (editor && editor.getHTML() !== page.content) {
       editor.commands.setContent(page.content, false);
     }
   }, [editor, page.content, refreshKey]);
@@ -236,10 +242,22 @@ function App() {
   const [activeEditor, setActiveEditor] = useState(null);
   const [refreshKeys, setRefreshKeys] = useState({});
   const [saveState, setSaveState] = useState('Saved on this device');
+  const [cloudState, setCloudState] = useState('local');
+  const [cloudError, setCloudError] = useState('');
+  const [onlinePartners, setOnlinePartners] = useState([]);
   const [panel, setPanel] = useState('');
   const fileInputRef = useRef(null);
   const saveTimer = useRef(null);
   const versionTimer = useRef(null);
+  const cloudWriteTimer = useRef(null);
+  const cloudReadyRef = useRef(false);
+  const seedAttemptedRef = useRef(false);
+  const cloudPageSignaturesRef = useRef(new Map());
+  const cloudHistoryIdsRef = useRef(new Set());
+  const presenceWriterRef = useRef(null);
+  const activePageIdRef = useRef(activePageId);
+
+  activePageIdRef.current = activePageId;
 
   useEffect(() => { pagesRef.current = pages; }, [pages]);
   useEffect(() => { historyRef.current = history; }, [history]);
@@ -263,21 +281,216 @@ function App() {
 
   useEffect(() => {
     clearTimeout(saveTimer.current);
-    setSaveState('Saving…');
+    if (!auth.user) setSaveState('Saving…');
     saveTimer.current = setTimeout(() => {
       try {
-        localStorage.setItem(PAGE_STORAGE_KEY, JSON.stringify(pages));
-        setSaveState('Saved on this device');
+        const key = auth.user ? PAGE_STORAGE_KEY + ':' + auth.user.uid : PAGE_STORAGE_KEY;
+        localStorage.setItem(key, JSON.stringify(pages));
+        if (!auth.user) setSaveState('Saved on this device');
       } catch {
-        setSaveState('Could not save locally');
+        if (!auth.user) setSaveState('Could not save locally');
       }
     }, 550);
     return () => clearTimeout(saveTimer.current);
-  }, [pages]);
+  }, [pages, auth.user?.uid]);
+
+
+  // The shared journal is the source of truth once Firebase is configured.
+  // Page documents are intentionally separate so edits on different pages do not
+  // overwrite the entire notebook. Photo bytes are never written to Firestore.
+  useEffect(() => {
+    if (!auth.configured || !auth.user || !firebaseDb) {
+      cloudReadyRef.current = false;
+      setCloudState('local');
+      setCloudError('');
+      setOnlinePartners([]);
+      return undefined;
+    }
+
+    cloudReadyRef.current = false;
+    seedAttemptedRef.current = false;
+    cloudPageSignaturesRef.current = new Map();
+    cloudHistoryIdsRef.current = new Set();
+    setCloudState('connecting');
+    setCloudError('');
+
+    const pagesCollection = collection(firebaseDb, 'journals', 'paraly', 'pages');
+    const pagesQuery = query(pagesCollection, orderBy('order', 'asc'));
+    const historyCollection = collection(firebaseDb, 'journals', 'paraly', 'history');
+    const historyQuery = query(historyCollection, orderBy('createdAt', 'desc'), limit(100));
+
+    const unsubscribePages = onSnapshot(pagesQuery, (snapshot) => {
+      if (snapshot.empty) {
+        if (seedAttemptedRef.current) return;
+        seedAttemptedRef.current = true;
+        setCloudState('seeding');
+        const starterPages = makeStarterPages();
+        Promise.all(starterPages.map((page, index) => {
+          const payload = serializePageForCloud(page, index, auth.user);
+          return setDoc(doc(firebaseDb, 'journals', 'paraly', 'pages', String(page.id)), payload);
+        })).catch((error) => {
+          cloudReadyRef.current = false;
+          setCloudState('error');
+          setCloudError(error?.code === 'permission-denied'
+            ? 'Your Google account has signed in, but it has not been added to the journal membership list yet.'
+            : 'ParAly could not initialise its shared pages. Check the Firebase setup and security rules.');
+        });
+        return;
+      }
+
+      const currentLocalPages = pagesRef.current;
+      const remotePages = snapshot.docs.map((pageDoc) => {
+        const data = pageDoc.data();
+        const payload = { ...data, id: Number(data.id ?? pageDoc.id) };
+        const page = hydratePageFromCloud(payload, currentLocalPages);
+        const signature = stableJson(serializePageForCloud(page, Number(data.order) || 0, auth.user));
+        cloudPageSignaturesRef.current.set(String(page.id), signature);
+        return page;
+      }).sort((a, b) => a.order - b.order);
+
+      cloudReadyRef.current = true;
+      pagesRef.current = remotePages;
+      setPages(remotePages);
+      setCloudState('ready');
+      setCloudError('');
+      setSaveState('Synced with Firebase');
+    }, (error) => {
+      cloudReadyRef.current = false;
+      setCloudState('error');
+      setCloudError(error?.code === 'permission-denied'
+        ? 'Access is not provisioned yet. Add both signed-in accounts using the membership setup script, then publish the Firebase rules.'
+        : 'Could not connect to the shared journal. Check your Firebase configuration and internet connection.');
+    });
+
+    const unsubscribeHistory = onSnapshot(historyQuery, (snapshot) => {
+      const cloudHistory = snapshot.docs.map((versionDoc) => {
+        const version = { ...versionDoc.data(), id: versionDoc.id };
+        cloudHistoryIdsRef.current.add(String(version.id));
+        return version;
+      });
+      historyRef.current = cloudHistory;
+      setHistory(cloudHistory);
+    }, () => {
+      // Page sync stays available even if version history is not configured yet.
+    });
+
+    return () => {
+      cloudReadyRef.current = false;
+      unsubscribePages();
+      unsubscribeHistory();
+      clearTimeout(cloudWriteTimer.current);
+    };
+  }, [auth.configured, auth.user?.uid]);
+
+  useEffect(() => {
+    if (cloudState !== 'ready' || !auth.user || !firebaseDb || !cloudReadyRef.current) return undefined;
+    clearTimeout(cloudWriteTimer.current);
+    cloudWriteTimer.current = setTimeout(async () => {
+      const changes = [];
+      pagesRef.current.forEach((page, index) => {
+        const payload = serializePageForCloud(page, index, auth.user);
+        const signature = stableJson(payload);
+        const key = String(page.id);
+        if (cloudPageSignaturesRef.current.get(key) !== signature) {
+          changes.push({ key, payload, signature });
+        }
+      });
+      if (!changes.length) return;
+
+      setSaveState('Saving to Firebase…');
+      try {
+        await Promise.all(changes.map(({ key, payload }) =>
+          setDoc(doc(firebaseDb, 'journals', 'paraly', 'pages', key), payload)
+        ));
+        changes.forEach(({ key, signature }) => cloudPageSignaturesRef.current.set(key, signature));
+        setSaveState('Synced with Firebase');
+      } catch (error) {
+        setSaveState('Cloud save failed');
+        setCloudError(error?.code === 'permission-denied'
+          ? 'Firebase rules denied a page update. Check that the two journal members are provisioned.'
+          : 'A page could not be saved to Firebase. Your local backup is still available.');
+      }
+    }, 650);
+    return () => clearTimeout(cloudWriteTimer.current);
+  }, [pages, cloudState, auth.user?.uid]);
+
+  useEffect(() => {
+    if (cloudState !== 'ready' || !auth.user || !firebaseDb) return undefined;
+    const missing = history.filter((version) => !cloudHistoryIdsRef.current.has(String(version.id)));
+    if (!missing.length) return undefined;
+
+    let cancelled = false;
+    const saveVersions = async () => {
+      for (const version of missing) {
+        if (cancelled) return;
+        try {
+          const payload = serializeVersionForCloud(version, auth.user);
+          await setDoc(doc(firebaseDb, 'journals', 'paraly', 'history', String(version.id)), payload, { merge: false });
+          cloudHistoryIdsRef.current.add(String(version.id));
+        } catch (error) {
+          setCloudError(error?.code === 'permission-denied'
+            ? 'Firebase denied saving version history. Check the deployed Firestore rules.'
+            : 'Version history could not be synchronised. Recent text remains saved in the page.');
+          return;
+        }
+      }
+    };
+    saveVersions();
+    return () => { cancelled = true; };
+  }, [history, cloudState, auth.user?.uid]);
+
+  // Presence uses Realtime Database disconnect handling so an abruptly closed tab
+  // is removed automatically. Presence is advisory; page data remains in Firestore.
+  useEffect(() => {
+    if (cloudState !== 'ready' || !auth.user || !firebaseRealtimeDb) {
+      presenceWriterRef.current = null;
+      setOnlinePartners([]);
+      return undefined;
+    }
+
+    const uid = auth.user.uid;
+    const presencePath = 'journals/paraly/presence';
+    const selfRef = ref(firebaseRealtimeDb, presencePath + '/' + uid);
+    const allPresenceRef = ref(firebaseRealtimeDb, presencePath);
+    const writePresence = () => set(selfRef, {
+      uid,
+      displayName: auth.user.displayName || auth.user.email || 'A journal member',
+      photoURL: auth.user.photoURL || '',
+      pageId: activePageIdRef.current,
+      lastSeen: Date.now(),
+    });
+    presenceWriterRef.current = writePresence;
+    const disconnect = onDisconnect(selfRef);
+    disconnect.remove().catch(() => {});
+    writePresence().catch(() => {});
+    const stopPresenceListener = onValue(allPresenceRef, (snapshot) => {
+      const people = snapshot.val() || {};
+      const now = Date.now();
+      setOnlinePartners(Object.values(people).filter((person) =>
+        person && person.uid !== uid && typeof person.lastSeen === 'number' && now - person.lastSeen < 90000
+      ));
+    });
+    const heartbeat = window.setInterval(() => writePresence().catch(() => {}), 30000);
+
+    return () => {
+      window.clearInterval(heartbeat);
+      stopPresenceListener();
+      presenceWriterRef.current = null;
+      disconnect.cancel().catch(() => {});
+      remove(selfRef).catch(() => {});
+    };
+  }, [cloudState, auth.user?.uid]);
+
+  useEffect(() => {
+    if (presenceWriterRef.current && cloudState === 'ready') {
+      presenceWriterRef.current().catch(() => {});
+    }
+  }, [activePageId, cloudState]);
 
   useEffect(() => () => {
     clearTimeout(saveTimer.current);
     clearTimeout(versionTimer.current);
+    clearTimeout(cloudWriteTimer.current);
   }, []);
 
   const maxSpread = Math.max(0, Math.ceil(pages.length / 2) - 1);
@@ -289,7 +502,13 @@ function App() {
   const activePage = pages.find((page) => page.id === activePageId) || visiblePages[visiblePages.length - 1] || pages[0];
 
   const handleContentChange = useCallback((id, html) => {
-    const nextPages = pagesRef.current.map((page) => page.id === id ? { ...page, content: html, updatedAt: Date.now() } : page);
+    const nextPages = pagesRef.current.map((page) => page.id === id ? {
+      ...page,
+      content: html,
+      updatedAt: Date.now(),
+      updatedBy: auth.user?.uid || page.updatedBy || '',
+      updatedByName: auth.user?.displayName || auth.user?.email || page.updatedByName || '',
+    } : page);
     pagesRef.current = nextPages;
     setPages(nextPages);
     setSaveState('Saving…');
@@ -301,7 +520,7 @@ function App() {
       const previous = historyRef.current;
       if (previous[0] && previous[0].pageId === id && previous[0].content === snapshotPage.content) return;
       const nextHistory = [{
-        id: String(Date.now()),
+        id: (globalThis.crypto?.randomUUID?.() || (String(Date.now()) + '-' + Math.random().toString(36).slice(2))),
         pageId: id,
         title: snapshotPage.title,
         createdAt: Date.now(),
@@ -310,9 +529,12 @@ function App() {
       }, ...previous].slice(0, 80);
       historyRef.current = nextHistory;
       setHistory(nextHistory);
-      try { localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(nextHistory)); } catch { /* history is best-effort in local preview */ }
+      try {
+        const key = auth.user ? HISTORY_STORAGE_KEY + ':' + auth.user.uid : HISTORY_STORAGE_KEY;
+        localStorage.setItem(key, JSON.stringify(nextHistory));
+      } catch { /* history is best-effort in local preview */ }
     }, 9000);
-  }, []);
+  }, [auth.user?.uid, auth.user?.displayName, auth.user?.email]);
 
   const handleObjectChange = useCallback((pageId, objectId, patch) => {
     const nextPages = pagesRef.current.map((page) => page.id === pageId
@@ -533,6 +755,23 @@ function App() {
     );
   };
 
+  if (auth.configured && auth.user && cloudState !== 'ready' && cloudState !== 'local') {
+    return (
+      <main className="auth-screen">
+        <div className="auth-card">
+          <div className="auth-monogram">P <span>&amp;</span> A</div>
+          <span className="eyebrow">THE SHARED JOURNAL</span>
+          <h1>{cloudState === 'error' ? 'One small setup step.' : 'Finding our pages.'}<span>.</span></h1>
+          {cloudState !== 'error' && <div className="auth-loading-mark" aria-label="Loading" />}
+          <p className="auth-description">{cloudState === 'error' ? cloudError : 'Connecting to the private journal and loading its latest pages.'}</p>
+          {cloudState === 'error' && <p className="auth-error">Your local preview remains untouched. The cloud journal will open once its membership and Firebase rules are set up correctly.</p>}
+          <button className="google-signin-button" type="button" onClick={auth.signOut}>Sign out</button>
+        </div>
+        <div className="auth-screen-foot">PARALY <span>·</span> A SMALL WORLD FOR TWO</div>
+      </main>
+    );
+  }
+
   if (auth.configured && auth.loading) {
     return (
       <main className="auth-screen">
@@ -627,9 +866,11 @@ function App() {
       <div className="preview-banner">
         <span className="preview-banner-mark">i</span>
         <span>
-          {auth.configured
-            ? <><strong>Account verified</strong> — this milestone still saves drafts on this device; cloud sync comes next.</>
-            : <><strong>Private preview</strong> — edits are saved on this device for now. Shared accounts, cloud sync, and cross-device history come next.</>}
+          {cloudState === 'ready'
+            ? <><strong>Shared journal connected</strong> — text, page layout, and sticky notes sync through Firebase. Photos are kept locally until secure Drive uploads are connected.</>
+            : auth.configured
+              ? <><strong>{cloudState === 'error' ? 'Cloud connection needs setup' : 'Connecting your journal'}</strong> — {cloudState === 'error' ? cloudError : 'Opening the shared pages and checking membership…'}</>
+              : <><strong>Private preview</strong> — drafts and photographs are saved in this browser until Firebase and Drive are configured.</>}
         </span>
       </div>
 
@@ -668,7 +909,7 @@ function App() {
       <div className="journal-workspace">
         <div className="journal-label-row">
           <div><span className="eyebrow">THE SHARED JOURNAL</span><h1>Our little world<span>.</span></h1></div>
-          <div className="active-page-label"><span className="presence-dot" />{activePage?.title || 'Untitled page'} <span className="page-label-separator">/</span> {isMobile ? 'PAGE ' + (mobilePage + 1) : 'PAGES ' + (spread * 2 + 1) + '–' + Math.min(pages.length, spread * 2 + 2)}</div>
+          <div className="active-page-label"><span className="presence-dot" />{activePage?.title || 'Untitled page'} <span className="page-label-separator">/</span> {isMobile ? 'PAGE ' + (mobilePage + 1) : 'PAGES ' + (spread * 2 + 1) + '–' + Math.min(pages.length, spread * 2 + 2)}{onlinePartners.length > 0 && <span className="collaborator-chip"><span className="presence-dot" />{onlinePartners[0].displayName || 'Your person'} is here</span>}</div>
         </div>
 
         <div className={'notebook-spread' + (isMobile ? ' notebook-spread--mobile' : '')} key={isMobile ? 'mobile' : 'desktop'}>

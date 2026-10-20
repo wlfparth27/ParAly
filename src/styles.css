@@ -26,6 +26,39 @@ button:disabled { cursor: not-allowed; opacity: .38; }
 button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid #a4bdce; outline-offset: 3px; }
 ::selection { background: rgba(120, 150, 174, .28); }
 
+.photo-placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 82px;
+  aspect-ratio: 4 / 4.4;
+  padding: 8px;
+  background:
+    repeating-linear-gradient(135deg, rgba(117,128,126,.035) 0 4px, transparent 4px 8px),
+    #e8e3d8;
+  color: #76827f;
+  text-align: center;
+  font: 7px/1.6 'DM Mono', monospace;
+  letter-spacing: .06em;
+}
+.photo-placeholder span { color: #9a9c91; font-size: 6px; }
+.collaborator-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 8px;
+  padding: 5px 8px;
+  border: 1px solid rgba(158,181,165,.2);
+  color: #c5d1c8;
+  background: rgba(115,149,123,.07);
+  white-space: nowrap;
+  font: 9px 'DM Sans', sans-serif;
+}
+.collaborator-chip .presence-dot {
+  width: 5px;
+  height: 5px;
+  background: #9fbea3;
+}
+
 .auth-screen {
   min-height: 100vh;
   position: relative;
@@ -798,7 +831,8 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   .journal-workspace { padding: 21px 12px 0; }
   .journal-label-row { margin-bottom: 17px; display: block; }
   .journal-label-row h1 { font-size: 31px; }
-  .active-page-label { margin-top: 12px; font-size: 9px; }
+  .active-page-label { margin-top: 12px; font-size: 9px; flex-wrap: wrap; }
+  .collaborator-chip { margin-left: 0; }
   .notebook-spread { padding: 10px 9px 12px; }
   .notebook-spread--mobile .notebook-cover-underlay { inset: 0; }
   .notebook-spread--mobile .spiral-binding { left: 18px; width: 18px; top: 18px; bottom: 22px; transform: none; }

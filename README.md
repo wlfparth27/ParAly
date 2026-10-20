@@ -2,48 +2,63 @@
 
 A private, shared journal for Parth and A.
 
-## Current milestone
+## Current build
 
-The first playable frontend establishes the notebook experience:
-
-- Dusty-blue leather cover with a silver spiral and P & A monogram.
-- Cover-opening animation and two-page desktop spread.
-- Responsive page navigation for mobile and tablet.
-- Rich text editing, typeface and size selection, text colour, highlighting, lists, alignment, undo, and redo.
+- Dusty-blue leather cover with silver spiral and P & A monogram.
+- Cover-opening animation and responsive journal pages.
+- Rich text formatting, typefaces, text colour, highlighting, lists, alignment, collaborative undo/redo.
 - Movable sticky notes and photographs with captions.
-- Contents, gallery, timeline, bookmarks, and preliminary browser-local version snapshots.
-- Automatic local-draft saving.
-- Firebase client configuration and an invitation-gated Google sign-in screen.
+- Contents, gallery, timeline, bookmarks, and page version snapshots.
+- Firebase Google sign-in scaffold with a two-address invitation gate.
+- Firestore-backed page metadata and version history.
+- Yjs-backed rich-text collaboration persisted through Firestore.
+- Realtime Database presence for the other journal member.
+- Local browser backup for journal state.
 
-## Run locally
+## Zero-additional-spend goal
+
+Do not introduce paid vendors, paid collaboration plans, or infrastructure that requires a paid plan simply to work. Firebase products must remain within their no-cost quotas. The existing Google One 5 TB allowance is the planned photo store, through the Google Drive API; upload support is **not connected yet**. We won't use Cloudflare R2, Firebase Storage, or Liveblocks for this zero-new-spend version.
+
+Google One storage is shared across the Google account's Drive, Gmail, and Google Photos, so the actual remaining photo capacity is the subscription's remaining quota—not a dedicated 5 TB just for ParAly. Google Drive API rate limits also apply. We must never describe storage as unlimited.
+
+Firestore currently has a no-cost quota of 1 GiB stored data, 50,000 document reads/day, 20,000 writes/day, and 10 GiB outbound transfer/month for one eligible database. Yjs editing uses Firestore reads/writes, so use sensible sync delays and avoid attaching multiple unnecessary listeners. Do not enable billing to solve a quota issue without the user's explicit approval.
+
+## Local setup
 
 1. Install a current Node.js LTS release.
-2. Copy `.env.example` to `.env.local`.
-3. Create a Firebase project and register a Web app in the Firebase console.
-4. Enable Google in Authentication > Sign-in method, and add your local host to Authentication > Settings > Authorized domains if required.
-5. Fill in the `VITE_FIREBASE_*` values from the Firebase Web app config.
-6. Replace the sample `VITE_ALLOWED_EMAILS` values with the two real Google account email addresses.
-7. Run `npm install`, then `npm run dev`.
+2. Create a Firebase project and register a Web app.
+3. In Firebase Authentication, enable Google sign-in and add both local/deployed domains under Authorized domains.
+4. Create one Cloud Firestore database. Choose the location carefully; database location cannot simply be changed later.
+5. Create Firebase Realtime Database and copy its URL.
+6. Copy `.env.example` to `.env.local`. Put the Firebase Web app config into the `VITE_FIREBASE_*` values.
+7. Set `VITE_ALLOWED_EMAILS` to exactly the two Google account email addresses, separated by a comma. Set `PARALY_MEMBER_EMAILS` to the same two addresses.
+8. Run `npm install`, then `npm run dev`.
+9. Both people must sign in once through Google so Firebase Authentication creates their user records. Until membership is provisioned, the app intentionally won't show the cloud journal.
+10. Download a Firebase service-account key for local setup only. Set `GOOGLE_APPLICATION_CREDENTIALS` to its file path in `.env.local`. Never commit that key.
+11. Run `npm run seed:members`. This uses the Admin SDK locally to create the two membership records in Firestore and Realtime Database. The script refuses to run unless it has exactly two email addresses.
+12. Deploy rules using `npx firebase-tools deploy --only firestore:rules,database`, then reload the app.
 
-## Architecture direction
+The service-account key bypasses Firebase client rules; keep it private, do not put it in a Vite `VITE_*` variable, and revoke it when it is no longer needed.
+
+## Current architecture
 
 - **Firebase Authentication:** Google sign-in for the two invited accounts.
-- **Cloud Firestore:** journal structure, metadata, sealed-letter state, and durable version snapshots.
-- **Google Drive API:** journal photo files, stored against the existing Google account's Google One / Drive quota.
-- **Firebase Realtime Database:** online presence and collaboration coordination where appropriate.
-- **React + Tiptap + a Yjs-based collaboration layer:** concurrent editing without silently replacing the other person's changes.
-- **Vercel:** frontend hosting and a small server-side API to access Drive securely.
+- **Cloud Firestore:** page metadata, sticky-note metadata, durable version snapshots, and Yjs update history.
+- **Firebase Realtime Database:** online presence and disconnect cleanup.
+- **Yjs + Tiptap Collaboration + a Firestore provider:** concurrent text editing with conflict-free merging.
+- **Google Drive API:** planned photo files stored against your existing Google One / Drive quota.
+- **Vercel:** frontend hosting.
 
-The implementation will not use Liveblocks file storage, Cloudflare R2, or Firebase Storage for journal photos in the zero-new-spend version. Cloud Storage for Firebase requires a Blaze billing account for new buckets and continued access, and R2 requires a billing profile/payment method even though it has a limited free tier. Instead, we plan to store compressed journal photos in a dedicated folder in the existing Google Drive account that has the Google One subscription. A server-side API must authenticate the journal member, access Drive using a securely stored owner OAuth credential, and never expose that credential to the browser. Photo storage is still limited by the remaining Google One quota, and Drive API usage limits still apply. We should not promise unlimited storage.
+The photo uploader is the next major milestone. It must keep Drive credentials out of the browser, upload files into an application-specific ParAly folder, preserve private permissions, and show storage/quota failures clearly. Until then, photo bytes stay local to the browser; only non-binary photo metadata is written to Firestore. Do not store base64 image data in Firestore documents.
 
-## Security and storage notes
+## Security notes
 
-The current Google sign-in allowlist is a front-end gate for the setup milestone, not a security boundary for cloud data. Before any private journal data is written to Firebase, Firestore, Realtime Database, and Storage Security Rules must independently enforce that only the two approved members can read or change it. Do not deploy cloud storage with open rules.
-
-Google One storage is shared across the subscriber's Google Drive, Gmail, and Google Photos. For this no-new-spend plan, journal photos will use the Drive space already included in the existing subscription. This is a finite quota, not unlimited storage; the app should show available/used capacity where practical and stop uploads safely before it runs out. Compress uploads and create thumbnails to use the quota efficiently.
-
-Do not provision Firebase Storage or Cloudflare R2 for the zero-spend milestone: Firebase Storage requires a Blaze billing account, and Cloudflare requires a payment method for an R2 subscription. We will avoid those services unless Parth explicitly chooses a spending-enabled plan later.
+- `VITE_ALLOWED_EMAILS` is only a front-end invitation gate. It is not the security boundary.
+- `firestore.rules` allows access only for UIDs seeded into `journals/paraly/members`; clients cannot add themselves.
+- `database.rules.json` restricts presence to seeded member UIDs.
+- The Admin SDK seed script runs locally and should never be exposed as a public endpoint.
+- The Google Drive token flow still needs to be designed before upload is enabled; do not grant the app broad access to a user's entire Drive when a narrower scope can work.
 
 ## Current limitations
 
-This is still a frontend preview. Without Firebase environment values the site opens in local-preview mode, saving drafts to the current browser. With Firebase Auth configured, the Google sign-in screen is enabled, but journal content, Drive photo storage, real-time collaboration, member-enforced security rules, and cloud version history are not yet connected. Drive storage requires a separate owner-account OAuth connection in the backend; the Firebase Google sign-in token alone must not be treated as Drive access. These will be implemented as separate, testable milestones.
+This branch is still a work in progress. Actual cloud behaviour needs a configured Firebase project, deployed rules, and seeded memberships. The GitHub Actions build should pass before merging. Photos are not yet shared between devices, and we still need to test Yjs initialisation, simultaneous editing, reconnects, version restores, and free-tier read/write usage against a real test project.

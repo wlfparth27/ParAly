@@ -24,9 +24,9 @@ export const firebaseConfig = {
   storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || publicConfig.storageBucket,
   messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || publicConfig.messagingSenderId,
   appId: env.VITE_FIREBASE_APP_ID || publicConfig.appId,
-  // Copy the exact URL from the Realtime Database page. Its hostname depends on
-  // the database's region, so do not infer it from the Firebase console URL.
-  databaseURL: env.VITE_FIREBASE_DATABASE_URL || '',
+  // Supplied from the existing asia-southeast1 Realtime Database. An environment
+  // override is still supported for local/preview deployments using another project.
+  databaseURL: env.VITE_FIREBASE_DATABASE_URL || 'https://paraly-2bfb7-default-rtdb.asia-southeast1.firebasedatabase.app',
 };
 
 export const isFirebaseConfigured = Boolean(

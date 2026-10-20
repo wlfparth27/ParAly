@@ -1,5 +1,7 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import { getDatabase } from 'firebase/database';
 
 const env = import.meta.env;
 
@@ -10,6 +12,7 @@ export const firebaseConfig = {
   storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: env.VITE_FIREBASE_APP_ID,
+  databaseURL: env.VITE_FIREBASE_DATABASE_URL,
 };
 
 export const isFirebaseConfigured = Boolean(
@@ -24,3 +27,7 @@ export const firebaseApp = isFirebaseConfigured
   : null;
 
 export const firebaseAuth = firebaseApp ? getAuth(firebaseApp) : null;
+export const firebaseDb = firebaseApp ? getFirestore(firebaseApp) : null;
+export const firebaseRealtimeDb = firebaseApp && firebaseConfig.databaseURL
+  ? getDatabase(firebaseApp)
+  : null;

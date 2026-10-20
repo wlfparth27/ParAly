@@ -12,23 +12,15 @@ This first cloud milestone uses Firebase Authentication, Cloud Firestore, and Fi
 ## 2. Create the databases
 
 1. Under Build → Firestore Database, create a database if the Firestore tab does not already show one. Choose a location close to you and your girlfriend; the location cannot simply be changed later. Production mode is fine because we will deploy the member-only rules from this repo.
-2. Under Build → Realtime Database, open the existing `paraly-2bfb7-default-rtdb` database. Copy the exact HTTPS database URL shown above the data panel. It may end in `.firebaseio.com` or `.<region>.firebasedatabase.app`; do not guess it from the Firebase console URL.
-3. Add that exact URL as `VITE_FIREBASE_DATABASE_URL` in local `.env.local` and in Vercel's environment variables when we deploy. This is required for the presence indicator.
-4. Leave Firebase Storage for a later step: ParAly is planned to store original photos in the existing Google Drive / Google One allowance rather than introducing a Firebase Storage billing requirement.
+2. The existing Realtime Database is at `https://paraly-2bfb7-default-rtdb.asia-southeast1.firebasedatabase.app`. This URL is now configured as the app's default. You can override it with `VITE_FIREBASE_DATABASE_URL` for another environment.
+3. Leave Firebase Storage for a later step: ParAly is planned to store original photos in the existing Google Drive / Google One allowance rather than introducing a Firebase Storage billing requirement.
 
 ## 3. Configure the local app
 
 1. Clone this repository and check out the `feat/notebook-first-pass` branch, or download that branch from GitHub.
 2. Copy `.env.example` to `.env.local`.
-3. Fill these values from the Firebase Web app settings:
-   - `VITE_FIREBASE_API_KEY`
-   - `VITE_FIREBASE_AUTH_DOMAIN`
-   - `VITE_FIREBASE_PROJECT_ID`
-   - `VITE_FIREBASE_STORAGE_BUCKET` (may be present even though Storage is not used)
-   - `VITE_FIREBASE_MESSAGING_SENDER_ID`
-   - `VITE_FIREBASE_APP_ID`
-   - `VITE_FIREBASE_DATABASE_URL` (from the Realtime Database page)
-4. Set `VITE_ALLOWED_EMAILS` and `PARALY_MEMBER_EMAILS` to exactly your Google email and your girlfriend's Google email, separated by a comma. Example format only: `first@example.com,second@example.com`.
+3. The web app configuration and Realtime Database URL are already set in `src/firebase.js`; no duplicate values are needed for local development.
+4. Set `PARALY_MEMBER_EMAILS` to exactly the two invited Google email addresses, separated by a comma. You provided these values in the setup conversation; keep them in your local `.env.local`, not in source code. `VITE_ALLOWED_EMAILS` is optional and only an extra client-side gate, not a security boundary.
 5. Run `npm install`, then `npm run dev`.
 6. Sign into ParAly once with each invited Google account. The project needs Firebase Auth users to exist before member provisioning.
 
@@ -106,4 +98,4 @@ The Firebase Web app has already been configured in `src/firebase.js`:
 - Auth domain: `paraly-2bfb7.firebaseapp.com`
 - Web app ID: `1:260846591273:web:cacc84500dc4e0eaf12b38`
 
-The only missing client-side Firebase value is the exact Realtime Database HTTPS URL from the console. Add this to `.env.local` as `VITE_FIREBASE_DATABASE_URL`. The Google sign-in provider and Firestore database still need to be enabled/created and the local member-provisioning script must be run before the shared journal opens.
+The Realtime Database URL is now configured in the app. The Google sign-in provider and Firestore database still need to be enabled/created, the two accounts must sign in once, and the local member-provisioning script must be run before the shared journal opens.

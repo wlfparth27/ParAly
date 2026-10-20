@@ -1,0 +1,25 @@
+{
+  "name": "paraly",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tiptap/extension-highlight": "^3.0.0",
+    "@tiptap/extension-text-align": "^3.0.0",
+    "@tiptap/extension-text-style": "^3.0.0",
+    "@tiptap/react": "^3.0.0",
+    "@tiptap/starter-kit": "^3.0.0",
+    "firebase": "^12.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "vite": "^7.0.0"
+  }
+}

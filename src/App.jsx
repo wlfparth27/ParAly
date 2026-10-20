@@ -556,7 +556,7 @@ function App() {
           cloudReadyRef.current = false;
           setCloudState('error');
           setCloudError(error?.code === 'permission-denied'
-            ? 'Your Google account has signed in, but it has not been added to the journal membership list yet.'
+            ? 'Your account is not provisioned in the journal yet. Check the server invitation configuration, then reload.'
             : 'ParAly could not initialise its shared pages. Check the Firebase setup and security rules.');
         });
         return;
@@ -582,7 +582,7 @@ function App() {
       cloudReadyRef.current = false;
       setCloudState('error');
       setCloudError(error?.code === 'permission-denied'
-        ? 'Access is not provisioned yet. Add both signed-in accounts using the membership setup script, then publish the Firebase rules.'
+        ? 'Journal access is not provisioned yet. Check the deployed membership rules and invitation configuration.'
         : 'Could not connect to the shared journal. Check your Firebase configuration and internet connection.');
     });
 

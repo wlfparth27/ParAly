@@ -29,10 +29,6 @@ export function AuthProvider({ children }) {
       }
 
       const email = candidate.email?.toLowerCase() || '';
-      // During first-time setup no allowlist may be configured yet. Let the user
-      // create their Firebase Auth record; Firestore membership rules then keep
-      // the journal closed until the owner provisions the two approved UIDs.
-      // Once a two-address frontend allowlist is configured, also use it as a UI gate.
       if (allowedEmails.length >= 2 && !allowedEmails.includes(email)) {
         try {
           await firebaseSignOut(firebaseAuth);
@@ -43,6 +39,34 @@ export function AuthProvider({ children }) {
         setError('This Google account is not on the journal invitation list.');
         setLoading(false);
         return;
+      }
+
+      // In deployed builds, the server provisions an approved account after the
+      // owner signs in for the first time. This means a surprise recipient does
+      // not need to sign in during setup. The server-only allowlist and Admin SDK
+      // credentials are never exposed in the browser bundle.
+      if (import.meta.env.PROD) {
+        try {
+          const token = await candidate.getIdToken();
+          const response = await fetch('/api/auth/provision', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + token },
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(result.error || 'This Google account is not invited to the journal.');
+          }
+        } catch (provisionError) {
+          try {
+            await firebaseSignOut(firebaseAuth);
+          } catch {
+            // The database rules still block unprovisioned accounts.
+          }
+          setUser(null);
+          setError(provisionError?.message || 'ParAly could not verify journal access. Please try again.');
+          setLoading(false);
+          return;
+        }
       }
 
       setUser(candidate);

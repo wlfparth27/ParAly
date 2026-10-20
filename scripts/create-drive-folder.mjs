@@ -25,8 +25,9 @@ if (!clientId || !clientSecret || !refreshToken) {
   console.error('Set GOOGLE_DRIVE_OAUTH_CLIENT_ID, GOOGLE_DRIVE_OAUTH_CLIENT_SECRET, and GOOGLE_DRIVE_REFRESH_TOKEN in .env.local.');
   process.exit(1);
 }
-if (!partnerEmail || !partnerEmail.includes('@')) {
-  console.error('Set PARALY_PARTNER_EMAIL to your girlfriend’s Google account email in .env.local.');
+const shareFolderWithPartner = process.env.PARALY_SHARE_FOLDER_WITH_PARTNER === 'true';
+if (shareFolderWithPartner && (!partnerEmail || !partnerEmail.includes('@'))) {
+  console.error('Set PARALY_PARTNER_EMAIL to the second journal member email before enabling folder sharing.');
   process.exit(1);
 }
 
@@ -76,21 +77,25 @@ if (!folder) {
   console.log('Reusing the ParAly photo folder previously created by this OAuth app.');
 }
 
-const permissionsQuery = new URLSearchParams({ fields: 'permissions(id,emailAddress,role,type)' });
-const permissionData = await driveRequest('/files/' + encodeURIComponent(folder.id) + '/permissions?' + permissionsQuery.toString());
-const existing = (permissionData.permissions || []).find((permission) =>
-  String(permission.emailAddress || '').toLowerCase() === partnerEmail
-);
+if (shareFolderWithPartner) {
+  const permissionsQuery = new URLSearchParams({ fields: 'permissions(id,emailAddress,role,type)' });
+  const permissionData = await driveRequest('/files/' + encodeURIComponent(folder.id) + '/permissions?' + permissionsQuery.toString());
+  const existing = (permissionData.permissions || []).find((permission) =>
+    String(permission.emailAddress || '').toLowerCase() === partnerEmail
+  );
 
-if (!existing) {
-  await driveRequest('/files/' + encodeURIComponent(folder.id) + '/permissions?sendNotificationEmail=false&fields=id,emailAddress,role', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'user', role: 'reader', emailAddress: partnerEmail }),
-  });
-  console.log('Shared the photo folder with the second journal member as a viewer.');
+  if (!existing) {
+    await driveRequest('/files/' + encodeURIComponent(folder.id) + '/permissions?sendNotificationEmail=false&fields=id,emailAddress,role', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'user', role: 'reader', emailAddress: partnerEmail }),
+    });
+    console.log('Shared the photo folder with the second journal member as a viewer (no email notification requested).');
+  } else {
+    console.log('The second journal member already has access to the photo folder.');
+  }
 } else {
-  console.log('The second journal member already has access to the photo folder.');
+  console.log('Folder sharing with your partner is skipped to preserve the surprise. The journal can serve photo previews through its private API; you can share original Drive files after the reveal if you want.');
 }
 
 console.log('\nAdd this non-secret folder ID to .env.local and your Vercel environment:');

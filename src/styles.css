@@ -389,6 +389,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   transition: background .25s ease, border-color .25s ease, transform .25s ease;
 }
 .open-journal-button:hover { background: rgba(135,156,173,.16); border-color: rgba(238,238,231,.75); transform: translateY(-2px); }
+.open-journal-button:active { transform: translateY(0) scale(.985); }
 .button-arrow { font-size: 16px; color: #bccbd5; }
 .cover-caption small { color: rgba(222,224,216,.34); font: 8px 'DM Mono', monospace; letter-spacing: .19em; margin-top: 2px; }
 
@@ -495,6 +496,32 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   font-size: 10px;
 }
 .toolbar-group select:disabled { opacity: .45; }
+.toolbar-paper { gap: 6px; padding-left: 9px; margin-left: 3px; border-left: 1px solid rgba(220,224,217,.13); }
+.paper-control-label { padding: 0 3px 0 1px; color: #94a4ab; font: 8px 'DM Mono', monospace; letter-spacing: .14em; }
+.toolbar-paper select { max-width: 112px; }
+.paper-color-tool {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(222,226,220,.16);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background .2s ease, border-color .2s ease;
+}
+.paper-color-tool:hover { background: rgba(151,176,192,.15); border-color: rgba(222,226,220,.34); }
+.paper-color-tool span {
+  display: block;
+  width: 15px;
+  height: 15px;
+  border: 1px solid rgba(255,255,255,.38);
+  border-radius: 50%;
+  background: var(--swatch-color, #f4f0e6);
+  box-shadow: 0 0 0 1px rgba(15,22,27,.38);
+  pointer-events: none;
+}
+.paper-color-tool input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .color-tool, .highlight-tool {
   position: relative;
   display: grid;
@@ -590,14 +617,14 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 }
 @keyframes spread-settle { from { opacity: .6; transform: rotateY(-2deg) translateY(5px); } to { opacity: 1; transform: rotateY(0) translateY(0); } }
 .paper-page {
+  --paper-color: #f4f0e6;
   position: relative;
   min-width: 0;
   height: clamp(490px, 56vw, 670px);
   padding: clamp(26px, 3.6vw, 55px) clamp(26px, 4vw, 58px) 48px;
   color: #37404a;
-  background:
-    repeating-linear-gradient(0deg, rgba(138,129,108,.014) 0 1px, transparent 1px 4px),
-    linear-gradient(95deg, #eee8dc, #f7f2e8 7%, #f4f0e6 74%, #e9e2d6);
+  background-color: var(--paper-color, #f4f0e6);
+  background-image: linear-gradient(95deg, rgba(85,70,49,.045), transparent 12%, rgba(255,255,255,.13) 76%, rgba(77,65,48,.035));
   box-shadow: inset 0 0 0 1px rgba(129,118,96,.1), inset 0 0 20px rgba(83,69,46,.035);
   overflow: hidden;
   transform-origin: center;
@@ -608,7 +635,113 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .paper-page--active { box-shadow: inset 0 0 0 1px rgba(101,125,146,.19), inset 0 0 22px rgba(83,69,46,.045); }
 .paper-page--active::after { content: ''; position: absolute; inset: 7px; border: 1px solid rgba(119,131,131,.07); pointer-events: none; }
 @keyframes page-turn-in { from { opacity: .3; transform: rotateY(-9deg); } to { opacity: 1; transform: rotateY(0deg); } }
+
+/* The closed cover rotates away first; the open spread then settles into place. */
+.journal-app--opening .notebook-spread {
+  transform-origin: 50% 50%;
+  animation: notebook-open-reveal .98s cubic-bezier(.18,.75,.2,1) both;
+}
+.journal-app--opening .pages-spread {
+  animation: journal-pages-open 1s .04s cubic-bezier(.18,.75,.2,1) both;
+}
+.journal-app--opening .app-header,
+.journal-app--opening .preview-banner,
+.journal-app--opening .journal-toolbar,
+.journal-app--opening .journal-workspace {
+  animation: journal-interface-arrive .72s .12s ease-out both;
+}
+@keyframes notebook-open-reveal {
+  0% { opacity: 0; transform: rotateY(-24deg) scale(.94) translateY(15px); }
+  58% { opacity: 1; transform: rotateY(3deg) scale(1.012) translateY(-2px); }
+  78% { transform: rotateY(-1deg) scale(.998) translateY(1px); }
+  100% { opacity: 1; transform: rotateY(0) scale(1) translateY(0); }
+}
+@keyframes journal-pages-open {
+  0% { opacity: .16; transform: rotateY(-17deg) translateY(13px); transform-origin: left center; }
+  58% { opacity: 1; transform: rotateY(2.5deg) translateY(-1px); }
+  80% { transform: rotateY(-.7deg) translateY(1px); }
+  100% { opacity: 1; transform: rotateY(0) translateY(0); }
+}
+@keyframes journal-interface-arrive {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Directional leaf turns, replayed whenever the visible spread changes. */
+.notebook-spread--turn-next .pages-spread {
+  animation: spread-turn-next .68s cubic-bezier(.2,.72,.18,1) both;
+  transform-origin: left center;
+}
+.notebook-spread--turn-previous .pages-spread {
+  animation: spread-turn-previous .68s cubic-bezier(.2,.72,.18,1) both;
+  transform-origin: right center;
+}
+.notebook-spread--turn-next .paper-page:last-child {
+  transform-origin: left center;
+  backface-visibility: hidden;
+  animation: leaf-turn-forward .72s cubic-bezier(.22,.72,.2,1) both;
+}
+.notebook-spread--turn-previous .paper-page:first-child {
+  transform-origin: right center;
+  backface-visibility: hidden;
+  animation: leaf-turn-backward .72s cubic-bezier(.22,.72,.2,1) both;
+}
+.notebook-spread--mobile.notebook-spread--turn-next .paper-page:first-child {
+  transform-origin: left center;
+  backface-visibility: hidden;
+  animation: leaf-turn-forward .62s cubic-bezier(.22,.72,.2,1) both;
+}
+.notebook-spread--mobile.notebook-spread--turn-previous .paper-page:first-child {
+  transform-origin: right center;
+  backface-visibility: hidden;
+  animation: leaf-turn-backward .62s cubic-bezier(.22,.72,.2,1) both;
+}
+@keyframes spread-turn-next {
+  from { opacity: .78; transform: translateX(12px) rotateY(-3deg); }
+  to { opacity: 1; transform: translateX(0) rotateY(0); }
+}
+@keyframes spread-turn-previous {
+  from { opacity: .78; transform: translateX(-12px) rotateY(3deg); }
+  to { opacity: 1; transform: translateX(0) rotateY(0); }
+}
+@keyframes leaf-turn-forward {
+  0% { opacity: .66; transform: perspective(1400px) rotateY(-62deg); filter: brightness(.82); }
+  64% { opacity: 1; transform: perspective(1400px) rotateY(7deg); filter: brightness(1.02); }
+  100% { opacity: 1; transform: perspective(1400px) rotateY(0); filter: brightness(1); }
+}
+@keyframes leaf-turn-backward {
+  0% { opacity: .66; transform: perspective(1400px) rotateY(62deg); filter: brightness(.82); }
+  64% { opacity: 1; transform: perspective(1400px) rotateY(-7deg); filter: brightness(1.02); }
+  100% { opacity: 1; transform: perspective(1400px) rotateY(0); filter: brightness(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .closed-notebook, .closed-notebook--opening, .journal-app--opening *,
+  .notebook-spread--turn-next *, .notebook-spread--turn-previous * {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}
 .paper-grain { position: absolute; inset: 0; opacity: .32; pointer-events: none; background: repeating-linear-gradient(90deg, transparent 0 7px, rgba(111,99,73,.018) 8px, transparent 9px 14px); mix-blend-mode: multiply; }
+.paper-page[data-paper-pattern="plain"] .paper-grain { opacity: .32; background: repeating-linear-gradient(90deg, transparent 0 7px, rgba(111,99,73,.018) 8px, transparent 9px 14px); }
+.paper-page[data-paper-pattern="ruled"] .paper-grain {
+  opacity: .52;
+  background: repeating-linear-gradient(to bottom, transparent 0 27px, rgba(96,132,157,.34) 27px 28px);
+  mix-blend-mode: multiply;
+}
+.paper-page[data-paper-pattern="grid"] .paper-grain {
+  opacity: .42;
+  background-image:
+    linear-gradient(rgba(96,132,157,.34) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(96,132,157,.34) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mix-blend-mode: multiply;
+}
+.paper-page[data-paper-pattern="dots"] .paper-grain {
+  opacity: .48;
+  background: radial-gradient(circle, rgba(96,132,157,.58) 1px, transparent 1.3px);
+  background-size: 16px 16px;
+  mix-blend-mode: multiply;
+}
 
 .page-collab-overlay {
   position: absolute;

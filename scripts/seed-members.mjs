@@ -65,12 +65,19 @@ for (const email of emails) {
     });
   } catch (error) {
     if (error?.code === 'auth/user-not-found') {
-      console.error('No Firebase Authentication user exists for ' + email + '. Sign in once with that Google account first, then run this script again.');
-      process.exitCode = 1;
-      process.exit();
+      // During setup, only the owner may have signed in. The second account can
+      // be provisioned automatically by the protected Vercel endpoint when
+      // that person first opens the deployed journal.
+      console.warn('Skipping ' + email + ' for now; this account has not signed in yet.');
+      continue;
     }
     throw error;
   }
+}
+
+if (members.length === 0) {
+  console.error('Neither invited email exists in Firebase Authentication yet. Sign in with your own account first, then retry.');
+  process.exit(1);
 }
 
 const batch = firestore.batch();

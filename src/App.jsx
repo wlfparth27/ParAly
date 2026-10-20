@@ -4,7 +4,6 @@ import StarterKit from '@tiptap/starter-kit';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyleKit } from '@tiptap/extension-text-style';
-import Underline from '@tiptap/extension-underline';
 import Collaboration from '@tiptap/extension-collaboration';
 import * as Y from 'yjs';
 import { FirestoreYjsProvider } from './journal/firestoreYjsProvider.js';
@@ -57,7 +56,6 @@ function loadHistory() {
 const EDITOR_EXTENSIONS = [
   StarterKit,
   TextStyleKit,
-  Underline,
   Highlight.configure({ multicolor: true }),
   TextAlign.configure({ types: ['heading', 'paragraph'] }),
 ];
@@ -377,7 +375,6 @@ function JournalPage({
     const extensions = [
       StarterKit.configure(cloudEnabled ? { undoRedo: false } : {}),
       TextStyleKit,
-      Underline,
       Highlight.configure({ multicolor: true }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
     ];

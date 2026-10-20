@@ -1008,9 +1008,14 @@ function App() {
   const photos = pages.flatMap((page) => page.objects.filter((object) => object.type === 'photo').map((object) => ({ ...object, pageId: page.id })));
   const bookmarkedPages = pages.filter((page) => page.bookmarked);
 
+  // During collaborative setup Tiptap may destroy and recreate an editor as
+  // its Yjs document attaches. Never ask a destroyed instance for commands or
+  // active-mark state; stale editor handles can crash the whole React tree.
+  const usableEditor = activeEditor && !activeEditor.isDestroyed ? activeEditor : null;
+
   const applyCommand = (command) => {
-    if (!activeEditor) return;
-    command(activeEditor);
+    if (!usableEditor || usableEditor.isDestroyed) return;
+    command(usableEditor);
   };
 
   const renderPanel = () => {
@@ -1199,27 +1204,27 @@ function App() {
 
       <nav className="journal-toolbar" aria-label="Journal tools">
         <div className="toolbar-group toolbar-formatting">
-          <ToolButton label="B" title="Bold" active={!!activeEditor?.isActive('bold')} disabled={!activeEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleBold().run())} />
-          <ToolButton label={<em>I</em>} title="Italic" active={!!activeEditor?.isActive('italic')} disabled={!activeEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleItalic().run())} />
-          <ToolButton label={<span className="underlined-tool">U</span>} title="Underline" active={!!activeEditor?.isActive('underline')} disabled={!activeEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleUnderline().run())} />
-          <ToolButton label={<s>S</s>} title="Strikethrough" active={!!activeEditor?.isActive('strike')} disabled={!activeEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleStrike().run())} />
+          <ToolButton label="B" title="Bold" active={!!usableEditor?.isActive('bold')} disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleBold().run())} />
+          <ToolButton label={<em>I</em>} title="Italic" active={!!usableEditor?.isActive('italic')} disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleItalic().run())} />
+          <ToolButton label={<span className="underlined-tool">U</span>} title="Underline" active={!!usableEditor?.isActive('underline')} disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleUnderline().run())} />
+          <ToolButton label={<s>S</s>} title="Strikethrough" active={!!usableEditor?.isActive('strike')} disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleStrike().run())} />
           <span className="toolbar-divider" />
-          <select title="Font family" aria-label="Font family" defaultValue="Cormorant Garamond" onChange={(event) => applyCommand((editor) => editor.chain().focus().setFontFamily(event.target.value).run())} disabled={!activeEditor}>
+          <select title="Font family" aria-label="Font family" defaultValue="Cormorant Garamond" onChange={(event) => applyCommand((editor) => editor.chain().focus().setFontFamily(event.target.value).run())} disabled={!usableEditor}>
             <option value="Cormorant Garamond">Cormorant</option>
             <option value="Playfair Display">Playfair</option>
             <option value="Caveat">Handwritten</option>
             <option value="DM Sans">Sans</option>
             <option value="Georgia">Georgia</option>
           </select>
-          <select title="Text size" aria-label="Text size" defaultValue="18px" onChange={(event) => applyCommand((editor) => editor.chain().focus().setFontSize(event.target.value).run())} disabled={!activeEditor}>
+          <select title="Text size" aria-label="Text size" defaultValue="18px" onChange={(event) => applyCommand((editor) => editor.chain().focus().setFontSize(event.target.value).run())} disabled={!usableEditor}>
             <option value="13px">Small</option><option value="16px">Regular</option><option value="18px">Large</option><option value="24px">Title</option><option value="32px">Display</option>
           </select>
-          <label className="color-tool" title="Text colour">A<input aria-label="Text colour" type="color" defaultValue="#334d67" disabled={!activeEditor} onChange={(event) => applyCommand((editor) => editor.chain().focus().setColor(event.target.value).run())} /></label>
-          <label className="highlight-tool" title="Highlight colour">▰<input aria-label="Highlight colour" type="color" defaultValue="#f4df8a" disabled={!activeEditor} onChange={(event) => applyCommand((editor) => editor.chain().focus().setHighlight({ color: event.target.value }).run())} /></label>
-          <ToolButton label="≡" title="Align left" disabled={!activeEditor} onClick={() => applyCommand((editor) => editor.chain().focus().setTextAlign('left').run())} />
-          <ToolButton label="☷" title="Bulleted list" disabled={!activeEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleBulletList().run())} />
-          <ToolButton label="↶" title="Undo" disabled={!activeEditor} onClick={() => applyCommand((editor) => editor.chain().focus().undo().run())} />
-          <ToolButton label="↷" title="Redo" disabled={!activeEditor} onClick={() => applyCommand((editor) => editor.chain().focus().redo().run())} />
+          <label className="color-tool" title="Text colour">A<input aria-label="Text colour" type="color" defaultValue="#334d67" disabled={!usableEditor} onChange={(event) => applyCommand((editor) => editor.chain().focus().setColor(event.target.value).run())} /></label>
+          <label className="highlight-tool" title="Highlight colour">▰<input aria-label="Highlight colour" type="color" defaultValue="#f4df8a" disabled={!usableEditor} onChange={(event) => applyCommand((editor) => editor.chain().focus().setHighlight({ color: event.target.value }).run())} /></label>
+          <ToolButton label="≡" title="Align left" disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().setTextAlign('left').run())} />
+          <ToolButton label="☷" title="Bulleted list" disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleBulletList().run())} />
+          <ToolButton label="↶" title="Undo" disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().undo().run())} />
+          <ToolButton label="↷" title="Redo" disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().redo().run())} />
         </div>
         <div className="toolbar-group toolbar-insert">
           <button className="insert-button" onClick={addStickyNote}><span>＋</span> Sticky note</button>

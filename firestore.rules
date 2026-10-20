@@ -30,6 +30,12 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Reserved for the Yjs/Firestore collaboration provider. The provider's
+    // update blobs live under each page and are readable only to journal members.
+    match /journals/paraly/pages/{pageId}/yjs/{document=**} {
+      allow read, write: if isJournalMember();
+    }
+
     // Default deny for every other document in this database.
     match /{document=**} {
       allow read, write: if false;

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "seed:members": "node scripts/seed-members.mjs"
+    "seed:members": "node scripts/seed-members.mjs",
+    "drive:token": "node scripts/get-drive-token.mjs",
+    "drive:folder": "node scripts/create-drive-folder.mjs"
   },
   "dependencies": {
     "@tiptap/extension-highlight": "^3.0.0",

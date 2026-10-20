@@ -354,7 +354,12 @@ function JournalPage({
     return extensions;
   }, [cloudEnabled, collaborationSession?.doc]);
 
-  const editorOptions = !cloudEnabled || collaborationSession ? {
+  // Tiptap v3 reads options.immediatelyRender inside useEditor, so do not
+  // pass null while a cloud collaboration session is still connecting. Create
+  // a disabled, empty editor during that brief state; the dependency list makes
+  // useEditor recreate it with the collaborative document when the session arrives.
+  const editorOptions = {
+    immediatelyRender: false,
     extensions: editorExtensions,
     ...(cloudEnabled ? {} : { content: page.content }),
     editable: !cloudEnabled || collaborationState === 'ready' || collaborationSession?.shouldSeed === true,
@@ -367,7 +372,7 @@ function JournalPage({
     },
     onFocus: ({ editor: focusedEditor }) => onEditorFocus(page.id, focusedEditor),
     onUpdate: ({ editor: updatedEditor }) => onContentChange(page.id, updatedEditor.getHTML()),
-  } : null;
+  };
 
   const editor = useEditor(editorOptions, [page.id, refreshKey, collaborationSession?.doc, cloudEnabled]);
 

@@ -1,6 +1,22 @@
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { OAuth2Client } from 'google-auth-library';
+
+function loadEnvFile(filePath) {
+  if (!existsSync(filePath)) return;
+  for (const rawLine of readFileSync(filePath, 'utf8').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const separator = line.indexOf('=');
+    if (separator < 1) continue;
+    const key = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1).trim().replace(/^["']|["']$/g, '');
+    if (!process.env[key]) process.env[key] = value;
+  }
+}
+loadEnvFile(resolve(process.cwd(), '.env.local'));
 
 const clientId = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID;
 const clientSecret = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET;

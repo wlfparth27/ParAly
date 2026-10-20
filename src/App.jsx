@@ -1019,11 +1019,30 @@ function App() {
   // During collaborative setup Tiptap may destroy and recreate an editor as
   // its Yjs document attaches. Never ask a destroyed instance for commands or
   // active-mark state; stale editor handles can crash the whole React tree.
-  const usableEditor = activeEditor && !activeEditor.isDestroyed ? activeEditor : null;
+  const usableEditor = activeEditor
+    && !activeEditor.isDestroyed
+    && activeEditor.view?.dom?.isConnected
+    ? activeEditor
+    : null;
+
+  const isEditorActive = (name) => {
+    if (!usableEditor || usableEditor.isDestroyed || !usableEditor.view?.dom?.isConnected) return false;
+    try {
+      return Boolean(usableEditor.isActive(name));
+    } catch {
+      // Ignore a Tiptap instance being torn down during collaborative rebind.
+      return false;
+    }
+  };
 
   const applyCommand = (command) => {
-    if (!usableEditor || usableEditor.isDestroyed) return;
-    command(usableEditor);
+    if (!usableEditor || usableEditor.isDestroyed || !usableEditor.view?.dom?.isConnected) return;
+    try {
+      command(usableEditor);
+    } catch {
+      // An editor may be replaced between an input event and this callback.
+      setActiveEditor(null);
+    }
   };
 
   const renderPanel = () => {
@@ -1212,10 +1231,10 @@ function App() {
 
       <nav className="journal-toolbar" aria-label="Journal tools">
         <div className="toolbar-group toolbar-formatting">
-          <ToolButton label="B" title="Bold" active={!!usableEditor?.isActive('bold')} disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleBold().run())} />
-          <ToolButton label={<em>I</em>} title="Italic" active={!!usableEditor?.isActive('italic')} disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleItalic().run())} />
-          <ToolButton label={<span className="underlined-tool">U</span>} title="Underline" active={!!usableEditor?.isActive('underline')} disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleUnderline().run())} />
-          <ToolButton label={<s>S</s>} title="Strikethrough" active={!!usableEditor?.isActive('strike')} disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleStrike().run())} />
+          <ToolButton label="B" title="Bold" active={!!isEditorActive('bold')} disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleBold().run())} />
+          <ToolButton label={<em>I</em>} title="Italic" active={!!isEditorActive('italic')} disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleItalic().run())} />
+          <ToolButton label={<span className="underlined-tool">U</span>} title="Underline" active={!!isEditorActive('underline')} disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleUnderline().run())} />
+          <ToolButton label={<s>S</s>} title="Strikethrough" active={!!isEditorActive('strike')} disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().toggleStrike().run())} />
           <span className="toolbar-divider" />
           <select title="Font family" aria-label="Font family" defaultValue="Cormorant Garamond" onChange={(event) => applyCommand((editor) => editor.chain().focus().setFontFamily(event.target.value).run())} disabled={!usableEditor}>
             <option value="Cormorant Garamond">Cormorant</option>

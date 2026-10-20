@@ -5,9 +5,12 @@ import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyleKit } from '@tiptap/extension-text-style';
 import Underline from '@tiptap/extension-underline';
+import Collaboration from '@tiptap/extension-collaboration';
+import * as Y from 'yjs';
+import { FirestoreProvider } from '@gmcfall/yjs-firestore-provider';
 import { collection, doc, limit, onSnapshot, orderBy, query, runTransaction, setDoc } from 'firebase/firestore';
 import { onDisconnect, onValue, ref, remove, set } from 'firebase/database';
-import { firebaseDb, firebaseRealtimeDb } from './firebase.js';
+import { firebaseApp, firebaseDb, firebaseRealtimeDb } from './firebase.js';
 import { hydratePageFromCloud, serializePageForCloud, serializeVersionForCloud, stableJson } from './journal/cloudModel.js';
 import { useAuth } from './auth/AuthProvider.jsx';
 
@@ -179,37 +182,161 @@ function JournalPage({
   pageNumber,
   active,
   refreshKey,
+  cloudEnabled,
+  user,
+  pendingRestore,
+  onRestoreApplied,
   onContentChange,
   onObjectChange,
   onEditorFocus,
 }) {
   const pageRef = useRef(null);
-  const editor = useEditor(
-    {
-      extensions: EDITOR_EXTENSIONS,
-      content: page.content,
-      editorProps: {
-        attributes: {
-          class: 'page-editor',
-          spellcheck: 'true',
-          'aria-label': 'Editable journal page ' + pageNumber,
-        },
-      },
-      onFocus: ({ editor: focusedEditor }) => onEditorFocus(page.id, focusedEditor),
-      onUpdate: ({ editor: updatedEditor }) => onContentChange(page.id, updatedEditor.getHTML()),
-    },
-    [page.id, refreshKey],
-  );
+  const seededRef = useRef(false);
+  const appliedRestoreNonceRef = useRef(null);
+  const [collaborationSession, setCollaborationSession] = useState(null);
+  const [collaborationState, setCollaborationState] = useState(cloudEnabled ? 'connecting' : 'local');
+  const [collaborationError, setCollaborationError] = useState('');
 
   useEffect(() => {
-    if (editor && editor.getHTML() !== page.content) {
-      editor.commands.setContent(page.content, false);
+    if (!cloudEnabled || !user?.uid || !firebaseApp || !firebaseDb) {
+      setCollaborationSession(null);
+      setCollaborationState('local');
+      setCollaborationError('');
+      return undefined;
     }
-  }, [editor, page.content, refreshKey]);
+
+    let cancelled = false;
+    seededRef.current = false;
+    setCollaborationSession(null);
+    setCollaborationState('connecting');
+    setCollaborationError('');
+
+    const ydoc = new Y.Doc();
+    const provider = new FirestoreProvider(
+      firebaseApp,
+      ydoc,
+      ['journals', 'paraly', 'pages', String(page.id)],
+      { disableAwareness: true, maxUpdatePause: 700 },
+    );
+
+    const markSynced = (_update, origin) => {
+      if (!cancelled && origin === provider) {
+        setCollaborationState('ready');
+        setCollaborationError('');
+      }
+    };
+    ydoc.on('update', markSynced);
+
+    const pageRef = doc(firebaseDb, 'journals', 'paraly', 'pages', String(page.id));
+    runTransaction(firebaseDb, async (transaction) => {
+      const snapshot = await transaction.get(pageRef);
+      if (!snapshot.exists()) throw new Error('The page no longer exists in the shared journal.');
+      if (snapshot.data().collaborationInitialized === true) return false;
+
+      transaction.update(pageRef, {
+        collaborationInitialized: true,
+        collaborationInitializedBy: user.uid,
+        collaborationInitializedAt: Date.now(),
+      });
+      return true;
+    }).then((shouldSeed) => {
+      if (cancelled) return;
+      setCollaborationSession({ doc: ydoc, provider, shouldSeed });
+      if (shouldSeed) setCollaborationState('seeding');
+      // For an already-initialised document, the provider's initial Yjs update
+      // changes the state to ready. The editor stays locked until that happens.
+    }).catch((error) => {
+      if (cancelled) return;
+      setCollaborationState('error');
+      setCollaborationError(error?.code === 'permission-denied'
+        ? 'The shared page is not authorised for this account. Verify the deployed Firestore rules.'
+        : 'The collaborative text could not be opened. Refresh the journal and try again.');
+    });
+
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) {
+        setCollaborationState((current) => {
+          if (current === 'ready' || current === 'seeding') return current;
+          setCollaborationError('This page has not received its shared text yet. Check the connection and refresh.');
+          return 'error';
+        });
+      }
+    }, 18000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      ydoc.off('update', markSynced);
+      provider.destroy();
+      ydoc.destroy();
+    };
+  }, [cloudEnabled, user?.uid, page.id, refreshKey]);
+
+  const editorExtensions = useMemo(() => {
+    const extensions = [
+      StarterKit.configure(cloudEnabled ? { undoRedo: false } : {}),
+      TextStyleKit,
+      Underline,
+      Highlight.configure({ multicolor: true }),
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+    ];
+    if (cloudEnabled && collaborationSession) {
+      extensions.push(Collaboration.configure({ document: collaborationSession.doc }));
+    }
+    return extensions;
+  }, [cloudEnabled, collaborationSession?.doc]);
+
+  const editorOptions = !cloudEnabled || collaborationSession ? {
+    extensions: editorExtensions,
+    ...(cloudEnabled ? {} : { content: page.content }),
+    editable: !cloudEnabled || collaborationState === 'ready' || collaborationSession?.shouldSeed === true,
+    editorProps: {
+      attributes: {
+        class: 'page-editor',
+        spellcheck: 'true',
+        'aria-label': 'Editable journal page ' + pageNumber,
+      },
+    },
+    onFocus: ({ editor: focusedEditor }) => onEditorFocus(page.id, focusedEditor),
+    onUpdate: ({ editor: updatedEditor }) => onContentChange(page.id, updatedEditor.getHTML()),
+  } : null;
+
+  const editor = useEditor(editorOptions, [page.id, refreshKey, collaborationSession?.doc, cloudEnabled]);
+
+  useEffect(() => {
+    if (editor) {
+      const canEdit = !cloudEnabled || collaborationState === 'ready' || collaborationSession?.shouldSeed === true;
+      editor.setEditable(canEdit);
+    }
+  }, [editor, cloudEnabled, collaborationState, collaborationSession?.shouldSeed]);
+
+  useEffect(() => {
+    if (!cloudEnabled && editor && editor.getHTML() !== page.content) {
+      editor.commands.setContent(page.content || '<p></p>', { emitUpdate: false });
+    }
+  }, [editor, page.content, refreshKey, cloudEnabled]);
+
+  useEffect(() => {
+    if (!cloudEnabled || !editor || !collaborationSession?.shouldSeed || seededRef.current) return;
+    // Only the first client that atomically claims initialisation populates the Yjs
+    // document. Other clients wait for the provider to deliver this state.
+    editor.commands.setContent(page.content || '<p></p>', { emitUpdate: false });
+    seededRef.current = true;
+    setCollaborationState('ready');
+  }, [editor, cloudEnabled, collaborationSession?.shouldSeed, page.content]);
+
+  useEffect(() => {
+    if (!cloudEnabled || !editor || collaborationState !== 'ready') return;
+    if (!pendingRestore || Number(pendingRestore.pageId) !== Number(page.id)) return;
+    if (appliedRestoreNonceRef.current === pendingRestore.nonce) return;
+    editor.commands.setContent(pendingRestore.content || '<p></p>', { emitUpdate: false });
+    appliedRestoreNonceRef.current = pendingRestore.nonce;
+    onRestoreApplied?.(pendingRestore.nonce);
+  }, [cloudEnabled, editor, collaborationState, pendingRestore, page.id, onRestoreApplied]);
 
   return (
     <section
-      className={'paper-page' + (active ? ' paper-page--active' : '')}
+      className={'paper-page' + (active ? ' paper-page--active' : '') + (cloudEnabled && collaborationState !== 'ready' ? ' paper-page--collaboration-waiting' : '')}
       ref={pageRef}
       onClick={() => editor && onEditorFocus(page.id, editor)}
     >
@@ -218,6 +345,13 @@ function JournalPage({
         <EditorContent editor={editor} />
       </div>
       <PageObjects page={page} onObjectChange={onObjectChange} pageRef={pageRef} />
+      {cloudEnabled && collaborationState !== 'ready' && (
+        <div className="page-collab-overlay" role="status">
+          <span className="page-collab-symbol">{collaborationState === 'error' ? '!' : '↻'}</span>
+          <strong>{collaborationState === 'error' ? 'Page needs attention' : 'Preparing this page'}</strong>
+          <small>{collaborationState === 'error' ? collaborationError : 'Connecting the shared text so neither person overwrites the other.'}</small>
+        </div>
+      )}
       <div className="page-footer">
         <span>{page.bookmarked ? '♡ SAVED' : 'P · A'}</span>
         <span>{String(pageNumber).padStart(3, '0')}</span>
@@ -241,6 +375,7 @@ function App() {
   const [activePageId, setActivePageId] = useState(2);
   const [activeEditor, setActiveEditor] = useState(null);
   const [refreshKeys, setRefreshKeys] = useState({});
+  const [pendingRestore, setPendingRestore] = useState(null);
   const [saveState, setSaveState] = useState('Saved on this device');
   const [cloudState, setCloudState] = useState('local');
   const [cloudError, setCloudError] = useState('');
@@ -422,7 +557,7 @@ function App() {
       setSaveState('Saving to Firebase…');
       try {
         await Promise.all(changes.map(({ key, payload }) =>
-          setDoc(doc(firebaseDb, 'journals', 'paraly', 'pages', key), payload)
+          setDoc(doc(firebaseDb, 'journals', 'paraly', 'pages', key), payload, { merge: true })
         ));
         changes.forEach(({ key, signature }) => cloudPageSignaturesRef.current.set(key, signature));
         setSaveState('Synced with Firebase');
@@ -718,6 +853,9 @@ function App() {
       : page);
     pagesRef.current = nextPages;
     setPages(nextPages);
+    if (cloudState === 'ready') {
+      setPendingRestore({ pageId: version.pageId, content: version.content, nonce: Date.now() });
+    }
     setRefreshKeys((previous) => ({ ...previous, [version.pageId]: (previous[version.pageId] || 0) + 1 }));
     goToPage(nextPages.findIndex((page) => page.id === version.pageId));
   };
@@ -967,6 +1105,10 @@ function App() {
                   pageNumber={pageIndex + 1}
                   active={page.id === activePageId}
                   refreshKey={refreshKeys[page.id] || 0}
+                  cloudEnabled={cloudState === 'ready' && auth.configured && Boolean(auth.user)}
+                  user={auth.user}
+                  pendingRestore={pendingRestore}
+                  onRestoreApplied={(nonce) => setPendingRestore((current) => current?.nonce === nonce ? null : current)}
                   onContentChange={handleContentChange}
                   onObjectChange={handleObjectChange}
                   onEditorFocus={(id, editor) => { setActivePageId(id); setActiveEditor(editor); }}

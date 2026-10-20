@@ -406,6 +406,14 @@ function JournalPage({
 
   const editor = useEditor(editorOptions, [page.id, refreshKey, collaborationSession?.doc, cloudEnabled]);
 
+  // Keep the parent's toolbar reference aligned with the live editor. Tiptap
+  // recreates the editor when the collaborative Y.Doc attaches; an old handle
+  // must not remain selected after that instance has been destroyed.
+  useEffect(() => {
+    if (!active) return;
+    onEditorFocus(page.id, editor && !editor.isDestroyed ? editor : null);
+  }, [active, editor, page.id]);
+
   useEffect(() => {
     if (editor) {
       const canEdit = !cloudEnabled || collaborationState === 'ready' || collaborationSession?.shouldSeed === true;

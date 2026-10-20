@@ -249,8 +249,12 @@ function App() {
 
   useEffect(() => {
     if (!isOpen || !pages.length) return;
-    const visibleIndex = isMobile ? mobilePage : Math.min(pages.length - 1, spread * 2 + 1);
-    if (pages[visibleIndex]) setActivePageId(pages[visibleIndex].id);
+    const visible = isMobile
+      ? [pages[mobilePage]].filter(Boolean)
+      : [pages[spread * 2], pages[spread * 2 + 1]].filter(Boolean);
+    if (visible.some((page) => page.id === activePageId)) return;
+    const preferred = isMobile ? visible[0] : visible[visible.length - 1];
+    if (preferred) setActivePageId(preferred.id);
   }, [isOpen, isMobile, mobilePage, spread, pages.length]);
 
   useEffect(() => {

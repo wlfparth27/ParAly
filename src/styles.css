@@ -678,6 +678,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   .paper-page { height: min(72vh, 650px); min-height: 510px; border-radius: 1px !important; padding: 34px 24px 46px; }
   .paper-page:first-child { display: block; }
   .paper-page:last-child { display: none; }
+  .notebook-spread--mobile .paper-page:last-child { display: block; }
   .page-editor { font-size: 18px; line-height: 1.78; }
   .page-editor h1 { font-size: 42px; }
   .page-editor h2 { font-size: 38px; }

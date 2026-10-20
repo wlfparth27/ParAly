@@ -7,7 +7,7 @@ import { TextStyleKit } from '@tiptap/extension-text-style';
 import Underline from '@tiptap/extension-underline';
 import Collaboration from '@tiptap/extension-collaboration';
 import * as Y from 'yjs';
-import { FirestoreProvider } from '@gmcfall/yjs-firestore-provider';
+import { FirestoreYjsProvider } from './journal/firestoreYjsProvider.js';
 import { collection, doc, limit, onSnapshot, orderBy, query, runTransaction, setDoc } from 'firebase/firestore';
 import { onDisconnect, onValue, ref, remove, set } from 'firebase/database';
 import { firebaseApp, firebaseDb, firebaseRealtimeDb } from './firebase.js';
@@ -212,20 +212,25 @@ function JournalPage({
     setCollaborationError('');
 
     const ydoc = new Y.Doc();
-    const provider = new FirestoreProvider(
-      firebaseApp,
+    const provider = new FirestoreYjsProvider(
+      firebaseDb,
       ydoc,
       ['journals', 'paraly', 'pages', String(page.id)],
-      { disableAwareness: true, maxUpdatePause: 700 },
+      {
+        onSynced: () => {
+          if (!cancelled) {
+            setCollaborationState('ready');
+            setCollaborationError('');
+          }
+        },
+        onError: () => {
+          if (!cancelled) {
+            setCollaborationState('error');
+            setCollaborationError('Could not save or receive shared text. Check Firebase access and connection.');
+          }
+        },
+      },
     );
-
-    const markSynced = (_update, origin) => {
-      if (!cancelled && origin === provider) {
-        setCollaborationState('ready');
-        setCollaborationError('');
-      }
-    };
-    ydoc.on('update', markSynced);
 
     const pageRef = doc(firebaseDb, 'journals', 'paraly', 'pages', String(page.id));
     runTransaction(firebaseDb, async (transaction) => {
@@ -241,8 +246,10 @@ function JournalPage({
       return true;
     }).then((shouldSeed) => {
       if (cancelled) return;
-      setCollaborationSession({ doc: ydoc, provider, shouldSeed });
-      if (shouldSeed) setCollaborationState('seeding');
+      const seedThisPage = shouldSeed && ydoc.getXmlFragment('default').length === 0;
+      setCollaborationSession({ doc: ydoc, provider, shouldSeed: seedThisPage });
+      if (seedThisPage) setCollaborationState('seeding');
+      else if (ydoc.getXmlFragment('default').length > 0) setCollaborationState('ready');
       // For an already-initialised document, the provider's initial Yjs update
       // changes the state to ready. The editor stays locked until that happens.
     }).catch((error) => {
@@ -266,7 +273,6 @@ function JournalPage({
     return () => {
       cancelled = true;
       window.clearTimeout(timeout);
-      ydoc.off('update', markSynced);
       provider.destroy();
       ydoc.destroy();
     };

@@ -261,6 +261,7 @@ function JournalPage({
   onRestoreApplied,
   onContentChange,
   onObjectChange,
+  onObjectDelete,
   onEditorFocus,
 }) {
   const pageRef = useRef(null);

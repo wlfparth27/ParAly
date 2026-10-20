@@ -27,14 +27,14 @@ This first cloud milestone uses Firebase Authentication, Cloud Firestore, and Fi
    ```
    If you already cloned the repo, use `git fetch` and `git switch feat/notebook-first-pass` instead of cloning it again.
 3. The example environment file includes the public project ID and Realtime Database URL used by the local Admin bootstrap script.
-4. Open `.env.local` in a text editor and fill these two lines with the two approved Google accounts:
+4. Open `.env.local` in a text editor and set the server-side invitation list:
    ```dotenv
    PARALY_MEMBER_EMAILS=your-google-email,partner-google-email
-   VITE_ALLOWED_EMAILS=your-google-email,partner-google-email
+   GOOGLE_APPLICATION_CREDENTIALS=
    ```
-   Replace the examples with the exact addresses; do not commit `.env.local`. The `VITE_ALLOWED_EMAILS` entry is only an extra sign-in UI check, not the security boundary.
-5. Start the app with `npm run dev`. Open the localhost URL shown in the terminal. Sign in once with each Google account so both users are registered in Firebase Authentication. Use a separate browser profile or an Incognito window for the second account. It is okay if the journal reports that the member is not provisioned yet.
-6. Stop the local server with `Ctrl+C`.
+   Replace the examples with the exact two approved addresses. Leave the key path empty until Step 4. Do not commit `.env.local`. Do not set these addresses under a `VITE_*` variable for the deployed site.
+5. Start the app with `npm run dev`. Open the localhost URL shown in the terminal and sign in **only with your own Google account**. You do not need your girlfriend to sign in during setup; the surprise recipient is provisioned automatically the first time she opens the deployed site.
+6. If the local site reports that membership is not provisioned yet, that is expected until Step 4. Stop the server with `Ctrl+C`.
 
 ## 4. Provision the two members
 
@@ -42,14 +42,24 @@ The Admin SDK bootstrap script runs locally. The service-account JSON file bypas
 
 1. In Firebase console → Project settings → Service accounts, click **Generate new private key**. Save the downloaded JSON outside the repository, for example `C:\\Users\\YOUR-WINDOWS-USER\\Documents\\paraly-admin-key.json`.
 2. In `.env.local`, set `GOOGLE_APPLICATION_CREDENTIALS` to that complete file path. Do not upload or paste this file anywhere.
-3. From the repository folder, run `npm run seed:members`. It checks that exactly two invited accounts exist, then records their Firebase UIDs as journal members in both databases. If it says a user is missing, sign into the local site once with that account and retry.
+3. From the repository folder, run `npm run seed:members`. It provisions whichever invited accounts have already signed in and skips accounts not created yet. **Only your own account needs to exist now.** The surprise recipient can remain signed out until you are ready.
 4. Deploy the repository's rules using the Firebase CLI:
    ```powershell
    npx firebase-tools login
    npx firebase-tools deploy --project paraly-2bfb7 --only firestore:rules,database
    ```
    Sign in to the CLI with a Google account that has permission to administer this Firebase project, then confirm the target is `paraly-2bfb7` before deploying.
-5. Reload ParAly. If access is denied, check the project ID, database URL, deployed rules, and that both accounts were seeded.
+5. For deployed hosting, open the Vercel project settings and add these server-side variables for **Production, Preview, and Development**:
+   - `PARALY_MEMBER_EMAILS`: the two allowed addresses separated by a comma.
+   - `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64`: the service-account JSON encoded as Base64.
+   - `FIREBASE_DATABASE_URL`: `https://paraly-2bfb7-default-rtdb.asia-southeast1.firebasedatabase.app`.
+   
+   To encode the service-account key locally in PowerShell, run the following with your actual file path (the output is secret; paste it only into Vercel's environment-variable form):
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\\path\\to\\paraly-admin-key.json"))
+   ```
+   Do not set `PARALY_MEMBER_EMAILS` or the service-account credential as `VITE_*` variables. Redeploy after saving the variables. The protected `/api/auth/provision` endpoint then checks the server-side allowlist and provisions either approved account the first time that person signs in.
+6. Reload the local app after seeding to test with your own account. Do not ask the surprise recipient to sign in before the reveal.
 
 Keep the service-account key only for local provisioning. After member setup succeeds, remove the `GOOGLE_APPLICATION_CREDENTIALS` line from `.env.local` and revoke/delete that service-account key in Google Cloud IAM if you no longer need it. Never send the key to the assistant or commit it to GitHub.
 
@@ -57,7 +67,7 @@ Keep the service-account key only for local provisioning. After member setup suc
 
 The notebook UI, rich-text editing, local draft storage, Firestore page metadata/history code, a Yjs/Firestore collaborative text provider, and Realtime Database presence code are in the feature branch. The CI production build passed for the current code revision.
 
-A real Firebase project has not been connected to this repository, so runtime behaviour has not yet been verified. Photo bytes are deliberately not saved as base64 in Firestore; Google Drive upload and private image retrieval are the next storage implementation step. Collaboration must be tested with both accounts before relying on it for important writing.
+The app still needs end-to-end runtime verification against the Firebase project. An approved account is now provisioned by the protected server endpoint during its first deployed sign-in, so the surprise recipient does not need to test early. Photo bytes are deliberately not saved as base64 in Firestore; Google Drive upload and private image retrieval are the next storage implementation step. Collaboration must be verified before relying on it for important writing.
 
 ## Security reminders
 

@@ -13,6 +13,15 @@ import { useAuth } from './auth/AuthProvider.jsx';
 
 const PAGE_STORAGE_KEY = 'paraly-pages-v1';
 const HISTORY_STORAGE_KEY = 'paraly-history-v1';
+const PAPER_COLOR_PRESETS = [
+  ['#f4f0e6', 'Warm ivory'],
+  ['#fffdf7', 'Paper white'],
+  ['#f4e3e4', 'Soft rose'],
+  ['#e5eee1', 'Sage'],
+  ['#e4edf4', 'Mist blue'],
+  ['#ece7f5', 'Lilac'],
+  ['#efe3d0', 'Sand'],
+];
 
 const INTRO_LEFT = '<p>PAGE 001 · BEGINNINGS</p><h2>For everything we want to keep.</h2><p>A little corner of the world that belongs to us. A place for letters, photographs, tiny reminders, and ordinary days that turn out to mean everything.</p><p><em>Start anywhere. This book is ours.</em></p>';
 const INTRO_RIGHT = '<p>A NOTE FOR YOU</p><h2>Dear you,</h2><p>There is no perfect way to begin a journal, so we do not have to try. We can leave words, photographs, half-finished thoughts, and little notes for each other to find later.</p><p>Whenever you are ready, make this page yours.</p><p><em>P. &amp; A.</em></p>';
@@ -335,6 +344,8 @@ function JournalPage({
   return (
     <section
       className={'paper-page' + (active ? ' paper-page--active' : '')}
+      data-paper-pattern={page.paperPattern || 'plain'}
+      style={{ '--paper-color': page.paperColor || '#f4f0e6' }}
       ref={pageRef}
       onClick={() => {
         if (editor && !editor.isDestroyed && editor.view?.dom?.isConnected) {
@@ -360,6 +371,8 @@ function App() {
   const auth = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
+  const [isJournalEntering, setIsJournalEntering] = useState(false);
+  const [turnDirection, setTurnDirection] = useState('next');
   const [pages, setPages] = useState(loadPages);
   const pagesRef = useRef(pages);
   const [history, setHistory] = useState(loadHistory);
@@ -652,6 +665,8 @@ function App() {
   }, [isMobile, mobilePage, pages, spread]);
 
   const activePage = pages.find((page) => page.id === activePageId) || visiblePages[visiblePages.length - 1] || pages[0];
+  const activePaperColor = activePage?.paperColor || '#f4f0e6';
+  const activePaperPattern = activePage?.paperPattern || 'plain';
 
   const handleContentChange = useCallback((id, html) => {
     const nextPages = pagesRef.current.map((page) => page.id === id ? {
@@ -756,6 +771,22 @@ function App() {
   };
 
   const currentPageId = () => activePageId || (isMobile ? pages[mobilePage]?.id : pages[spread * 2 + 1]?.id) || pages[0].id;
+
+  const handlePaperStyleChange = (patch) => {
+    const pageId = currentPageId();
+    const nextPages = pagesRef.current.map((page) => page.id === pageId
+      ? {
+        ...page,
+        ...patch,
+        updatedAt: Date.now(),
+        updatedBy: auth.user?.uid || page.updatedBy || '',
+        updatedByName: auth.user?.displayName || auth.user?.email || page.updatedByName || '',
+      }
+      : page);
+    pagesRef.current = nextPages;
+    setPages(nextPages);
+    setSaveState(cloudState === 'ready' ? 'Saving to Firebase…' : 'Saved on this device');
+  };
 
   const addStickyNote = () => {
     const colors = ['#f5e4a7', '#dce9d4', '#f4d8d9', '#dbe5f6'];
@@ -881,6 +912,7 @@ function App() {
   };
 
   const turnPage = (direction) => {
+    setTurnDirection(direction > 0 ? 'next' : 'previous');
     setActiveEditor(null);
     if (isMobile) {
       const next = Math.max(0, Math.min(pages.length - 1, mobilePage + direction));
@@ -1105,7 +1137,15 @@ function App() {
         </div>
         <div className="cover-caption">
           <p>A quiet place for the things that belong to us.</p>
-          <button className="open-journal-button" disabled={isOpening} onClick={() => { setIsOpening(true); window.setTimeout(() => { setIsOpen(true); setIsOpening(false); }, 950); }}>
+          <button className="open-journal-button" disabled={isOpening} onClick={() => {
+              setIsOpening(true);
+              window.setTimeout(() => {
+                setIsOpen(true);
+                setIsOpening(false);
+                setIsJournalEntering(true);
+                window.setTimeout(() => setIsJournalEntering(false), 1250);
+              }, 950);
+            }}>
             <span>{isOpening ? 'OPENING YOUR JOURNAL' : 'OPEN OUR JOURNAL'}</span><span className="button-arrow">↗</span>
           </button>
           <small>MADE FOR TWO · KEPT CLOSE</small>
@@ -1116,7 +1156,7 @@ function App() {
   }
 
   return (
-    <main className="journal-app">
+    <main className={'journal-app' + (isJournalEntering ? ' journal-app--opening' : '')}>
       <header className="app-header">
         <a className="app-wordmark" href="#journal" onClick={(event) => event.preventDefault()} aria-label="ParAly home">P<span>&</span>A <i>JOURNAL</i></a>
         <div className="save-indicator"><span className="save-dot" />{saveState}</div>
@@ -1129,7 +1169,7 @@ function App() {
               <button onClick={auth.signOut} title="Sign out of ParAly">SIGN OUT</button>
             </div>
           )}
-          <button className="header-icon-button" title="Close journal" aria-label="Close journal" onClick={() => { setIsOpen(false); setSpread(0); setMobilePage(0); }}>↙</button>
+          <button className="header-icon-button" title="Close journal" aria-label="Close journal" onClick={() => { setIsOpen(false); setIsJournalEntering(false); setSpread(0); setMobilePage(0); setTurnDirection('next'); }}>↙</button>
         </div>
       </header>
 
@@ -1168,6 +1208,40 @@ function App() {
           <ToolButton label="↶" title="Undo" disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().undo().run())} />
           <ToolButton label="↷" title="Redo" disabled={!usableEditor} onClick={() => applyCommand((editor) => editor.chain().focus().redo().run())} />
         </div>
+        <div className="toolbar-group toolbar-paper" aria-label="Page appearance">
+          <span className="paper-control-label">PAPER</span>
+          <select
+            title="Paper pattern"
+            aria-label="Paper pattern"
+            value={activePaperPattern}
+            onChange={(event) => handlePaperStyleChange({ paperPattern: event.target.value })}
+          >
+            <option value="plain">Plain</option>
+            <option value="ruled">Ruled lines</option>
+            <option value="grid">Grid</option>
+            <option value="dots">Dots</option>
+          </select>
+          <select
+            title="Paper colour"
+            aria-label="Paper colour"
+            value={activePaperColor}
+            onChange={(event) => handlePaperStyleChange({ paperColor: event.target.value })}
+          >
+            {PAPER_COLOR_PRESETS.map(([color, label]) => <option value={color} key={color}>{label}</option>)}
+            {!PAPER_COLOR_PRESETS.some(([color]) => color === activePaperColor) && (
+              <option value={activePaperColor}>Custom colour</option>
+            )}
+          </select>
+          <label className="paper-color-tool" title="Choose a custom paper colour">
+            <span aria-hidden="true" style={{ '--swatch-color': activePaperColor }} />
+            <input
+              type="color"
+              aria-label="Custom paper colour"
+              value={activePaperColor}
+              onChange={(event) => handlePaperStyleChange({ paperColor: event.target.value })}
+            />
+          </label>
+        </div>
         <div className="toolbar-group toolbar-insert">
           <button className="insert-button" onClick={addStickyNote}><span>＋</span> Sticky note</button>
           <button className="insert-button" onClick={() => fileInputRef.current?.click()}><span>＋</span> Photograph</button>
@@ -1182,7 +1256,7 @@ function App() {
           <div className="active-page-label"><span className="presence-dot" />{activePage?.title || 'Untitled page'} <span className="page-label-separator">/</span> {isMobile ? 'PAGE ' + (mobilePage + 1) : 'PAGES ' + (spread * 2 + 1) + '–' + Math.min(pages.length, spread * 2 + 2)}{onlinePartners.length > 0 && <span className="collaborator-chip"><span className="presence-dot" />{onlinePartners[0].displayName || 'Your person'} is here</span>}</div>
         </div>
 
-        <div className={'notebook-spread' + (isMobile ? ' notebook-spread--mobile' : '')} key={isMobile ? 'mobile' : 'desktop'}>
+        <div className={'notebook-spread' + (isMobile ? ' notebook-spread--mobile' : '') + ' notebook-spread--turn-' + turnDirection} key={isMobile ? 'mobile' : 'desktop'}>
           <div className="notebook-cover-underlay" />
           <div className="spiral-binding" aria-hidden="true">
             {Array.from({ length: 15 }, (_, index) => <span className="spiral-ring" key={index}><i /></span>)}

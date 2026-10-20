@@ -4,6 +4,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyleKit } from '@tiptap/extension-text-style';
+import Underline from '@tiptap/extension-underline';
 import { useAuth } from './auth/AuthProvider.jsx';
 
 const PAGE_STORAGE_KEY = 'paraly-pages-v1';
@@ -48,6 +49,7 @@ function loadHistory() {
 const EDITOR_EXTENSIONS = [
   StarterKit,
   TextStyleKit,
+  Underline,
   Highlight.configure({ multicolor: true }),
   TextAlign.configure({ types: ['heading', 'paragraph'] }),
 ];

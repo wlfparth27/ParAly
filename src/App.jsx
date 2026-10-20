@@ -12,7 +12,7 @@ import { collection, doc, limit, onSnapshot, orderBy, query, runTransaction, set
 import { onDisconnect, onValue, ref, remove, set } from 'firebase/database';
 import { firebaseApp, firebaseDb, firebaseRealtimeDb } from './firebase.js';
 import { hydratePageFromCloud, serializePageForCloud, serializeVersionForCloud, stableJson } from './journal/cloudModel.js';
-import { uploadJournalPhoto, fetchDrivePreview, deleteDrivePhoto } from './drive/driveClient.js';
+import { uploadJournalPhoto, fetchDrivePreview } from './drive/driveClient.js';
 import { useAuth } from './auth/AuthProvider.jsx';
 
 const PAGE_STORAGE_KEY = 'paraly-pages-v1';
@@ -814,13 +814,29 @@ function App() {
       const image = new Image();
       image.onerror = reject;
       image.onload = () => {
-        const scale = Math.min(1, 1200 / Math.max(image.width, image.height));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(image.width * scale));
-        canvas.height = Math.max(1, Math.round(image.height * scale));
-        const context = canvas.getContext('2d');
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.78));
+        let scale = Math.min(1, 1200 / Math.max(image.width, image.height));
+        let dataUrl = '';
+        for (let attempt = 0; attempt < 7; attempt += 1) {
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(image.width * scale));
+          canvas.height = Math.max(1, Math.round(image.height * scale));
+          const context = canvas.getContext('2d');
+          if (!context) {
+            reject(new Error('Your browser could not prepare this photograph.'));
+            return;
+          }
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          const quality = Math.max(0.42, 0.78 - attempt * 0.08);
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+          const estimatedBytes = Math.max(0, dataUrl.length - dataUrl.indexOf(',') - 1) * 0.75;
+          if (estimatedBytes <= 1.25 * 1024 * 1024) {
+            resolve(dataUrl);
+            return;
+          }
+          if (attempt >= 2) scale *= 0.82;
+        }
+        if (dataUrl) resolve(dataUrl);
+        else reject(new Error('That photograph could not be compressed.'));
       };
       image.src = reader.result;
     };

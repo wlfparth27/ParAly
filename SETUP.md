@@ -18,25 +18,40 @@ This first cloud milestone uses Firebase Authentication, Cloud Firestore, and Fi
 ## 3. Configure the local app
 
 1. Clone this repository and check out the `feat/notebook-first-pass` branch, or download that branch from GitHub.
-2. Copy `.env.example` to `.env.local`.
-3. The web app configuration and Realtime Database URL are already set in `src/firebase.js`; no duplicate values are needed for local development.
-4. Set `PARALY_MEMBER_EMAILS` to exactly the two invited Google email addresses, separated by a comma. You provided these values in the setup conversation; keep them in your local `.env.local`, not in source code. `VITE_ALLOWED_EMAILS` is optional and only an extra client-side gate, not a security boundary.
-5. Run `npm install`, then `npm run dev`.
-6. Sign into ParAly once with each invited Google account. The project needs Firebase Auth users to exist before member provisioning.
+2. In PowerShell, clone the feature branch and enter the folder:
+   ```powershell
+   git clone --branch feat/notebook-first-pass https://github.com/wlfparth27/ParAly.git
+   cd ParAly
+   Copy-Item .env.example .env.local
+   npm install
+   ```
+   If you already cloned the repo, use `git fetch` and `git switch feat/notebook-first-pass` instead of cloning it again.
+3. The example environment file includes the public project ID and Realtime Database URL used by the local Admin bootstrap script.
+4. Open `.env.local` in a text editor and fill these two lines with the two approved Google accounts:
+   ```dotenv
+   PARALY_MEMBER_EMAILS=your-google-email,partner-google-email
+   VITE_ALLOWED_EMAILS=your-google-email,partner-google-email
+   ```
+   Replace the examples with the exact addresses; do not commit `.env.local`. The `VITE_ALLOWED_EMAILS` entry is only an extra sign-in UI check, not the security boundary.
+5. Start the app with `npm run dev`. Open the localhost URL shown in the terminal. Sign in once with each Google account so both users are registered in Firebase Authentication. Use a separate browser profile or an Incognito window for the second account. It is okay if the journal reports that the member is not provisioned yet.
+6. Stop the local server with `Ctrl+C`.
 
 ## 4. Provision the two members
 
 The Admin SDK bootstrap script runs locally. The service-account JSON file bypasses client Security Rules; never upload it to GitHub, never put it in a `VITE_*` variable, and never send it through chat.
 
-1. In Firebase console → Project settings → Service accounts, create a private service-account key for local setup.
-2. Save it outside the repository, for example in a folder under your user profile.
-3. Set `GOOGLE_APPLICATION_CREDENTIALS` in `.env.local` to the full path to that JSON file.
-4. Run `npm run seed:members`. The script checks that exactly two invited accounts exist, then records their Firebase UIDs as journal members.
-5. Deploy the database rules from the repository:
-   `npx firebase-tools deploy --only firestore:rules,database`
-6. Reload ParAly. If access is denied, check the project ID, database URL, deployed rules, and that both accounts were seeded.
+1. In Firebase console → Project settings → Service accounts, click **Generate new private key**. Save the downloaded JSON outside the repository, for example `C:\\Users\\YOUR-WINDOWS-USER\\Documents\\paraly-admin-key.json`.
+2. In `.env.local`, set `GOOGLE_APPLICATION_CREDENTIALS` to that complete file path. Do not upload or paste this file anywhere.
+3. From the repository folder, run `npm run seed:members`. It checks that exactly two invited accounts exist, then records their Firebase UIDs as journal members in both databases. If it says a user is missing, sign into the local site once with that account and retry.
+4. Deploy the repository's rules using the Firebase CLI:
+   ```powershell
+   npx firebase-tools login
+   npx firebase-tools deploy --project paraly-2bfb7 --only firestore:rules,database
+   ```
+   Sign in to the CLI with a Google account that has permission to administer this Firebase project, then confirm the target is `paraly-2bfb7` before deploying.
+5. Reload ParAly. If access is denied, check the project ID, database URL, deployed rules, and that both accounts were seeded.
 
-Keep the service-account key only for local provisioning. Once setup is complete, remove the `GOOGLE_APPLICATION_CREDENTIALS` line from the local environment if you no longer need the seeding script, and consider deleting/revoking the key from Google Cloud IAM.
+Keep the service-account key only for local provisioning. After member setup succeeds, remove the `GOOGLE_APPLICATION_CREDENTIALS` line from `.env.local` and revoke/delete that service-account key in Google Cloud IAM if you no longer need it. Never send the key to the assistant or commit it to GitHub.
 
 ## 5. What currently works and what is still being built
 

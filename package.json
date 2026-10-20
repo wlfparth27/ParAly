@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "seed:members": "node scripts/seed-members.mjs"
   },
   "dependencies": {
     "@tiptap/extension-highlight": "^3.0.0",
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.0",
-    "vite": "^7.0.0"
+    "vite": "^7.0.0",
+    "firebase-admin": "^13.5.0"
   }
 }

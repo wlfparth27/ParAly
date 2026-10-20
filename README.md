@@ -9,7 +9,7 @@ A private, shared journal for Parth and A.
 - Rich text formatting, typefaces, text colour, highlighting, lists, alignment, collaborative undo/redo.
 - Movable sticky notes and photographs with captions.
 - Contents, gallery, timeline, bookmarks, and page version snapshots.
-- Firebase Google sign-in scaffold with a two-address invitation gate.
+- Firebase Google sign-in with a server-side invitation gate and first-login membership provisioning.
 - Firestore-backed page metadata and version history.
 - Yjs-backed rich-text collaboration persisted through Firestore.
 - Realtime Database presence for the other journal member.
@@ -31,12 +31,12 @@ For the full Firebase console walkthrough, see [SETUP.md](./SETUP.md).
 2. Use the existing Firebase project `paraly-2bfb7`; its public Web app configuration is already in `src/firebase.js`.
 3. Enable Google sign-in and confirm local/deployed domains under Authorized domains.
 4. Create Cloud Firestore if it does not already exist. Copy the exact HTTPS Realtime Database URL from the console to `VITE_FIREBASE_DATABASE_URL` in `.env.local`.
-5. Set `PARALY_MEMBER_EMAILS` to the two Google account email addresses. `VITE_ALLOWED_EMAILS` is optional and is only an additional UI check.
-6. Run `npm install`, then `npm run dev` for the frontend preview. For the full-stack Drive API routes, link the checkout to Vercel and run `npx vercel dev` as described in [SETUP.md](./SETUP.md).
-9. Both people must sign in once through Google so Firebase Authentication creates their user records. Until membership is provisioned, the app intentionally won't show the cloud journal.
-10. Download a Firebase service-account key for local setup only. Set `GOOGLE_APPLICATION_CREDENTIALS` to its file path in `.env.local`. Never commit that key.
-11. Run `npm run seed:members`. This uses the Admin SDK locally to create the two membership records in Firestore and Realtime Database. The script refuses to run unless it has exactly two email addresses.
-12. Deploy rules using `npx firebase-tools deploy --only firestore:rules,database`, then reload the app.
+5. Set the two approved Google addresses in `PARALY_MEMBER_EMAILS` inside local `.env.local`; do not expose this as a `VITE_*` variable.
+6. Run `npm install`, then `npm run dev`. Only the owner account needs to sign in during initial local testing.
+7. Download a Firebase service-account key for local setup, outside the repo. Set `GOOGLE_APPLICATION_CREDENTIALS` to its file path in `.env.local`. Never commit that key.
+8. Run `npm run seed:members`. It provisions accounts that have already signed in and skips the not-yet-created invitee.
+9. Deploy rules using `npx firebase-tools deploy --project paraly-2bfb7 --only firestore:rules,database`.
+10. In Vercel, set server-only `PARALY_MEMBER_EMAILS`, `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64`, and `FIREBASE_DATABASE_URL` environment variables, then redeploy. The invited partner is provisioned automatically on the first deployed sign-in; no advance test is needed. See [SETUP.md](./SETUP.md) for the exact steps.
 
 The service-account key bypasses Firebase client rules; keep it private, do not put it in a Vite `VITE_*` variable, and revoke it when it is no longer needed.
 
@@ -53,10 +53,10 @@ The Drive photo-upload flow is scaffolded. It initiates a resumable Drive sessio
 
 ## Security notes
 
-- `VITE_ALLOWED_EMAILS` is only a front-end invitation gate. It is not the security boundary.
-- `firestore.rules` allows access only for UIDs seeded into `journals/paraly/members`; clients cannot add themselves.
-- `database.rules.json` restricts presence to seeded member UIDs.
-- The Admin SDK seed script runs locally and should never be exposed as a public endpoint.
+- The server-side `PARALY_MEMBER_EMAILS` allowlist gates first-login provisioning; it is not included in the browser bundle.
+- `firestore.rules` allows access only for UIDs provisioned into `journals/paraly/members`; clients cannot add themselves.
+- `database.rules.json` restricts presence to provisioned member UIDs.
+- The Admin SDK seed script runs locally; the deployed first-login endpoint can provision only an email from the server-side invitation allowlist. Never expose service-account credentials or the allowlist under a `VITE_*` variable.
 - Google Drive uses the narrow `drive.file` OAuth scope. Keep the OAuth refresh token and client secret in server environment variables only; never add a `VITE_*` prefix to them.
 - Run `npm run drive:token` and `npm run drive:folder` only after setting up the OAuth client; see [SETUP.md](./SETUP.md).
 

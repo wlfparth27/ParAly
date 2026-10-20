@@ -295,25 +295,42 @@ function JournalPage({
     );
 
     const pageRef = doc(firebaseDb, 'journals', 'paraly', 'pages', String(page.id));
+    const stateRef = doc(firebaseDb, 'journals', 'paraly', 'pages', String(page.id), 'yjs', 'state');
     runTransaction(firebaseDb, async (transaction) => {
+      // A previous attempt may have marked the page initialised before it
+      // crashed, leaving no Yjs state. The actual state document is the source
+      // of truth: if it is missing, safely claim a lease and seed the page text.
       const snapshot = await transaction.get(pageRef);
       if (!snapshot.exists()) throw new Error('The page no longer exists in the shared journal.');
-      if (snapshot.data().collaborationInitialized === true) return false;
+      const stateSnapshot = await transaction.get(stateRef);
+      if (stateSnapshot.exists()) return { shouldSeed: false, waitingForSeed: false };
 
+      const pageData = snapshot.data();
+      const now = Date.now();
+      const lockExpiry = Number(pageData.collaborationSeedLockExpiresAt) || 0;
+      if (lockExpiry > now) {
+        return { shouldSeed: false, waitingForSeed: true };
+      }
+
+      const seedNonce = user.uid + '-' + now + '-' + Math.random().toString(36).slice(2, 10);
       transaction.update(pageRef, {
         collaborationInitialized: true,
         collaborationInitializedBy: user.uid,
-        collaborationInitializedAt: Date.now(),
+        collaborationInitializedAt: Number(pageData.collaborationInitializedAt) || now,
+        collaborationSeedLockOwner: user.uid,
+        collaborationSeedLockNonce: seedNonce,
+        collaborationSeedLockExpiresAt: now + 30000,
       });
-      return true;
-    }).then((shouldSeed) => {
+      return { shouldSeed: true, waitingForSeed: false, seedNonce };
+    }).then((result) => {
       if (cancelled) return;
-      const seedThisPage = shouldSeed && ydoc.getXmlFragment('default').length === 0;
-      setCollaborationSession({ doc: ydoc, provider, shouldSeed: seedThisPage });
+      const seedThisPage = result.shouldSeed && ydoc.getXmlFragment('default').length === 0;
+      setCollaborationSession({ doc: ydoc, provider, shouldSeed: seedThisPage, seedNonce: result.seedNonce || null });
       if (seedThisPage) setCollaborationState('seeding');
       else if (ydoc.getXmlFragment('default').length > 0) setCollaborationState('ready');
-      // For an already-initialised document, the provider's initial Yjs update
-      // changes the state to ready. The editor stays locked until that happens.
+      // If another tab holds the seed lease, stay in the connecting state until
+      // its Yjs state arrives. If a previous crash left only the marker, this
+      // client can reclaim the page after the 30-second lease expires.
     }).catch((error) => {
       if (cancelled) return;
       setCollaborationState('error');

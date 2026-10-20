@@ -4,18 +4,17 @@ This first cloud milestone uses Firebase Authentication, Cloud Firestore, and Fi
 
 ## 1. Create the Firebase project
 
-1. Open the Firebase console and create a new project named `ParAly` (or use a project you already own).
-2. Do not enable Analytics unless you specifically want it.
-3. Add a Web app in Project settings and copy its Firebase configuration.
-4. Under Build → Authentication → Sign-in method, enable Google.
-5. In Authentication → Settings → Authorized domains, confirm `localhost` is present for local work. Add the deployed domain when you deploy.
+1. Use the existing Firebase project `paraly-2bfb7`.
+2. Its Web app configuration has been added to `src/firebase.js` from the values you shared. Firebase's web API key is public app configuration; the actual access controls are Firebase Authentication and database Security Rules.
+3. Under Build → Authentication → Sign-in method, enable Google and select a support email.
+4. In Authentication → Settings → Authorized domains, confirm `localhost` is present for local work. Add the Vercel domain once the project is deployed.
 
 ## 2. Create the databases
 
-1. Under Build → Firestore Database, create a database. Choose a location close to you and your girlfriend; the location is not easy to change later.
-2. Keep in mind the journal will be private; never select test mode for the final database.
-3. Under Build → Realtime Database, create a database and copy its URL.
-4. Leave Storage for a later step: ParAly is planned to store original photos in the existing Google Drive / Google One allowance rather than introducing a Firebase Storage billing requirement.
+1. Under Build → Firestore Database, create a database if the Firestore tab does not already show one. Choose a location close to you and your girlfriend; the location cannot simply be changed later. Production mode is fine because we will deploy the member-only rules from this repo.
+2. Under Build → Realtime Database, open the existing `paraly-2bfb7-default-rtdb` database. Copy the exact HTTPS database URL shown above the data panel. It may end in `.firebaseio.com` or `.<region>.firebasedatabase.app`; do not guess it from the Firebase console URL.
+3. Add that exact URL as `VITE_FIREBASE_DATABASE_URL` in local `.env.local` and in Vercel's environment variables when we deploy. This is required for the presence indicator.
+4. Leave Firebase Storage for a later step: ParAly is planned to store original photos in the existing Google Drive / Google One allowance rather than introducing a Firebase Storage billing requirement.
 
 ## 3. Configure the local app
 
@@ -97,3 +96,14 @@ The Drive routes live under `api/drive/` and run as Vercel serverless functions.
 If local server routes are needed, link the checkout to your Vercel project and use `npx vercel dev`; plain `npm run dev` starts Vite only and does not execute the API routes.
 
 For cost safety, no paid Drive or photo-storage provider is configured. Direct Drive uploads bypass the 4.5 MB Vercel function request limit; previews are capped and proxied as small responses. The originals remain in the owner's Drive folder and count against that account's remaining Google One quota.
+
+
+## Existing Firebase project values
+
+The Firebase Web app has already been configured in `src/firebase.js`:
+
+- Project ID: `paraly-2bfb7`
+- Auth domain: `paraly-2bfb7.firebaseapp.com`
+- Web app ID: `1:260846591273:web:cacc84500dc4e0eaf12b38`
+
+The only missing client-side Firebase value is the exact Realtime Database HTTPS URL from the console. Add this to `.env.local` as `VITE_FIREBASE_DATABASE_URL`. The Google sign-in provider and Firestore database still need to be enabled/created and the local member-provisioning script must be run before the shared journal opens.

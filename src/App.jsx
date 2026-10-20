@@ -71,7 +71,7 @@ function PageObjects({ page, onObjectChange, pageRef }) {
   const dragRef = useRef(null);
 
   const beginDrag = (event, object) => {
-    if (event.target.closest('textarea, input, button')) return;
+    if (event.target.closest('textarea, input, button, [contenteditable="true"]')) return;
     event.preventDefault();
     event.stopPropagation();
     const bounds = pageRef.current?.getBoundingClientRect();
@@ -246,6 +246,12 @@ function App() {
     query.addEventListener('change', update);
     return () => query.removeEventListener('change', update);
   }, []);
+
+  useEffect(() => {
+    if (!isOpen || !pages.length) return;
+    const visibleIndex = isMobile ? mobilePage : Math.min(pages.length - 1, spread * 2 + 1);
+    if (pages[visibleIndex]) setActivePageId(pages[visibleIndex].id);
+  }, [isOpen, isMobile, mobilePage, spread, pages.length]);
 
   useEffect(() => {
     clearTimeout(saveTimer.current);
@@ -425,10 +431,15 @@ function App() {
       bookmarked: false,
       updatedAt: Date.now(),
     }));
+    const oldLength = pagesRef.current.length;
     const nextPages = [...pagesRef.current, ...newPages];
     pagesRef.current = nextPages;
     setPages(nextPages);
-    goToPage(nextPages.length - 2);
+    setMobilePage(oldLength);
+    setSpread(Math.floor(oldLength / 2));
+    setActivePageId(firstId);
+    setPanel('');
+    setActiveEditor(null);
   };
 
   const restoreVersion = (version) => {

@@ -83,8 +83,8 @@ Photo uploads use the existing Google Drive quota, not Firebase Storage or a thi
 
 ### Authorise the storage-owning Google account
 
-1. In the same Google Cloud project, enable **Google Drive API**.
-2. Open Google Auth Platform (OAuth consent / audience settings). Use an External audience for a personal Gmail account and add the storage-owning Gmail account as a test user while developing.
+1. In the same Google Cloud project, enable **Google Drive API**. You can use the existing `paraly-2bfb7` project.
+2. Open Google Auth Platform (OAuth consent / audience settings). For personal Gmail accounts, use an External audience and add only the storage-owning Gmail account (your account) as a test user while developing. You do not need your girlfriend to test or authorise anything.
 3. Add the `https://www.googleapis.com/auth/drive.file` scope. This is the narrow file-level scope; do not request full Drive access.
 4. Create an OAuth client of type **Web application**. Add the exact authorised redirect URI `http://localhost:53682/oauth2callback`.
 5. Copy its Client ID and Client Secret into `.env.local` as `GOOGLE_DRIVE_OAUTH_CLIENT_ID` and `GOOGLE_DRIVE_OAUTH_CLIENT_SECRET`.
@@ -94,7 +94,7 @@ Photo uploads use the existing Google Drive quota, not Firebase Storage or a thi
 ### Create the ParAly Drive folder
 
 1. Set `PARALY_PARTNER_EMAIL` to your girlfriend's Google account address in `.env.local`.
-2. Run `npm run drive:folder`. It creates or reuses a dedicated folder named `ParAly Journal Photos` using the same OAuth client, shares that folder with her as a viewer so the original-photo links can open, and prints `GOOGLE_DRIVE_FOLDER_ID`.
+2. Run `npm run drive:folder`. It creates or reuses a dedicated folder named `ParAly Journal Photos` and prints `GOOGLE_DRIVE_FOLDER_ID`. To preserve the surprise, the script does **not** share the folder with your girlfriend by default. When you are ready for the reveal, you can optionally set `PARALY_SHARE_FOLDER_WITH_PARTNER=true` and `PARALY_PARTNER_EMAIL` before rerunning it, or share the folder manually. Photo previews inside the journal are served by the private API and do not require her to sign into Drive during setup.
 3. Copy the printed folder ID into `.env.local`. Do not paste the full refresh token or client secret anywhere public.
 
 The app stores original and preview file IDs in Firestore, not photo bytes. The secure `/api/drive/image` route verifies the Firebase ID token and seeded member UID before returning an image preview. It rejects Drive files unless they carry ParAly's app metadata and live in the dedicated folder.
@@ -109,6 +109,7 @@ The Drive routes live under `api/drive/` and run as Vercel serverless functions.
 - `GOOGLE_DRIVE_OAUTH_CLIENT_SECRET`.
 - `GOOGLE_DRIVE_REFRESH_TOKEN`.
 - `GOOGLE_DRIVE_FOLDER_ID`.
+- Do not set `PARALY_SHARE_FOLDER_WITH_PARTNER=true` until you are ready to share the Drive folder after the surprise reveal.
 
 If local server routes are needed, link the checkout to your Vercel project and use `npx vercel dev`; plain `npm run dev` starts Vite only and does not execute the API routes.
 

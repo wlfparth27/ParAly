@@ -29,7 +29,11 @@ export function AuthProvider({ children }) {
       }
 
       const email = candidate.email?.toLowerCase() || '';
-      if (allowedEmails.length < 2 || !allowedEmails.includes(email)) {
+      // During first-time setup no allowlist may be configured yet. Let the user
+      // create their Firebase Auth record; Firestore membership rules then keep
+      // the journal closed until the owner provisions the two approved UIDs.
+      // Once a two-address frontend allowlist is configured, also use it as a UI gate.
+      if (allowedEmails.length >= 2 && !allowedEmails.includes(email)) {
         try {
           await firebaseSignOut(firebaseAuth);
         } catch {
@@ -59,11 +63,6 @@ export function AuthProvider({ children }) {
         setError('Firebase is not configured yet. Add the VITE_FIREBASE_* values to your local environment.');
         return;
       }
-      if (allowedEmails.length < 2) {
-        setError('Add both approved Google email addresses to VITE_ALLOWED_EMAILS before signing in.');
-        return;
-      }
-
       try {
         const provider = new GoogleAuthProvider();
         provider.setCustomParameters({ prompt: 'select_account' });

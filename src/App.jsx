@@ -4,6 +4,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyleKit } from '@tiptap/extension-text-style';
+import { useAuth } from './auth/AuthProvider.jsx';
 
 const PAGE_STORAGE_KEY = 'paraly-pages-v1';
 const HISTORY_STORAGE_KEY = 'paraly-history-v1';
@@ -219,6 +220,7 @@ function JournalPage({
 }
 
 function App() {
+  const auth = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
   const [pages, setPages] = useState(loadPages);
@@ -529,6 +531,46 @@ function App() {
     );
   };
 
+  if (auth.configured && auth.loading) {
+    return (
+      <main className="auth-screen">
+        <div className="auth-card">
+          <div className="auth-monogram">P <span>&amp;</span> A</div>
+          <span className="eyebrow">A PRIVATE JOURNAL</span>
+          <h1>Opening your little world<span>.</span></h1>
+          <div className="auth-loading-mark" aria-label="Loading" />
+          <p>Checking your invitation…</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (auth.configured && !auth.user) {
+    return (
+      <main className="auth-screen">
+        <div className="auth-card">
+          <div className="auth-monogram">P <span>&amp;</span> A</div>
+          <span className="eyebrow">JUST BETWEEN US</span>
+          <h1>A place for<br />the things we keep<span>.</span></h1>
+          <p className="auth-description">Letters, photographs, and little pieces of ordinary days. A shared journal, with only two keys.</p>
+          <button className="google-signin-button" type="button" onClick={auth.signInWithGoogle}>
+            <svg viewBox="0 0 48 48" aria-hidden="true">
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z" transform="translate(1 1) scale(.96)"/>
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.74 7.18l7.72 5.99c4.51-4.17 7.06-10.31 7.06-17.64Z" transform="translate(1 1) scale(.96)"/>
+              <path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.89.93 7.57 2.56 10.78l7.97-6.19Z" transform="translate(1 1) scale(.96)"/>
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.81l-7.72-5.99c-2.14 1.45-4.88 2.3-8.18 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z" transform="translate(1 1) scale(.96)"/>
+            </svg>
+            <span>Continue with Google</span>
+            <span className="google-button-arrow">↗</span>
+          </button>
+          {auth.error && <p className="auth-error" role="alert">{auth.error}</p>}
+          <div className="auth-footnote"><span /> INVITATION ONLY <span /></div>
+        </div>
+        <div className="auth-screen-foot">PARALY <span>·</span> A SMALL WORLD FOR TWO</div>
+      </main>
+    );
+  }
+
   if (!isOpen) {
     return (
       <main className="cover-screen">
@@ -570,13 +612,23 @@ function App() {
         <div className="header-actions">
           <button className="header-link" onClick={() => setPanel('contents')}>CONTENTS</button>
           <button className="header-link" onClick={() => setPanel('gallery')}>GALLERY</button>
+          {auth.configured && auth.user && (
+            <div className="signed-in-user">
+              <span>{auth.user.displayName?.split(' ')[0] || auth.user.email}</span>
+              <button onClick={auth.signOut} title="Sign out of ParAly">SIGN OUT</button>
+            </div>
+          )}
           <button className="header-icon-button" title="Close journal" aria-label="Close journal" onClick={() => { setIsOpen(false); setSpread(0); setMobilePage(0); }}>↙</button>
         </div>
       </header>
 
       <div className="preview-banner">
         <span className="preview-banner-mark">i</span>
-        <span><strong>Private preview</strong> — edits are saved on this device for now. Shared accounts, cloud sync, and cross-device history come next.</span>
+        <span>
+          {auth.configured
+            ? <><strong>Account verified</strong> — this milestone still saves drafts on this device; cloud sync comes next.</>
+            : <><strong>Private preview</strong> — edits are saved on this device for now. Shared accounts, cloud sync, and cross-device history come next.</>}
+        </span>
       </div>
 
       <nav className="journal-toolbar" aria-label="Journal tools">

@@ -133,11 +133,164 @@ function DrivePhotoImage({ object, alt, className = '' }) {
   return <img className={className} src={src} alt={alt || object.caption || 'A photograph in the journal'} draggable="false" />;
 }
 
+function getAudioPlayerDetails(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+
+    if (host === 'open.spotify.com') {
+      const match = parsed.pathname.match(/^\/(?:embed\/)?(track|album|playlist|episode|show)\/([A-Za-z0-9]+)/);
+      if (match) {
+        const type = match[1];
+        const id = match[2];
+        return {
+          provider: 'spotify',
+          src: 'https://open.spotify.com/embed/' + type + '/' + id + '?utm_source=generator',
+          height: (type === 'track' || type === 'episode') ? 152 : 352,
+        };
+      }
+    }
+
+    if (host === 'soundcloud.com' || host === 'm.soundcloud.com' || host === 'on.soundcloud.com') {
+      return {
+        provider: 'soundcloud',
+        src: 'https://w.soundcloud.com/player/?url=' + encodeURIComponent(parsed.href)
+          + '&color=%237d94a5&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=false',
+        height: 166,
+      };
+    }
+
+    if (host === 'youtu.be' || host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
+      const pathParts = parsed.pathname.split('/').filter(Boolean);
+      const videoId = host === 'youtu.be'
+        ? pathParts[0]
+        : (parsed.searchParams.get('v')
+          || ((pathParts[0] === 'embed' || pathParts[0] === 'shorts' || pathParts[0] === 'live') ? pathParts[1] : ''));
+      const playlistId = parsed.searchParams.get('list');
+      if (videoId && /^[A-Za-z0-9_-]{6,20}$/.test(videoId)) {
+        return {
+          provider: 'youtube',
+          src: 'https://www.youtube-nocookie.com/embed/' + videoId + (playlistId ? '?list=' + encodeURIComponent(playlistId) : '?rel=0'),
+          height: 190,
+        };
+      }
+      if (playlistId) {
+        return {
+          provider: 'youtube',
+          src: 'https://www.youtube-nocookie.com/embed/videoseries?list=' + encodeURIComponent(playlistId),
+          height: 190,
+        };
+      }
+    }
+
+    if (/\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|webm)$/i.test(parsed.pathname)) {
+      return { provider: 'native', src: parsed.href };
+    }
+    return { provider: 'unsupported', src: parsed.href };
+  } catch {
+    return { provider: 'unsupported', src: '' };
+  }
+}
+
+function LinkTabObject({ object, pageId, onObjectChange, onObjectDelete, onDragStart, onResizeStart }) {
+  const isAudio = object.kind === 'audio';
+  const audioDetails = isAudio ? getAudioPlayerDetails(object.url) : null;
+  return (
+    <article
+      className={'link-tab-object' + (isAudio ? ' link-tab-object--audio' : ' link-tab-object--link') + (object.isMinimized ? ' link-tab-object--minimized' : '')}
+      style={{
+        left: object.left + '%',
+        top: object.top + '%',
+        width: Number(object.width) > 0 ? object.width + '%' : undefined,
+        height: !object.isMinimized && Number(object.height) > 0 ? object.height + '%' : undefined,
+        transform: 'rotate(' + (object.rotation || 0) + 'deg)',
+        '--link-tab-tint': object.color || (isAudio ? '#e0eaf0' : '#f3e7c8'),
+      }}
+      title="Drag the tab by its little header"
+    >
+      <button
+        className="object-delete-button"
+        type="button"
+        title="Delete link tab"
+        aria-label="Delete link tab"
+        onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+        onClick={(event) => { event.preventDefault(); event.stopPropagation(); onObjectDelete(pageId, object.id); }}
+      >×</button>
+      <div className="link-tab-grip" onPointerDown={(event) => onDragStart(event, object)}>
+        <span className="link-tab-symbol" aria-hidden="true">{isAudio ? '♫' : '↗'}</span>
+        <span>{isAudio ? 'A LITTLE SOUND' : 'A LITTLE LINK'}</span>
+        <button
+          className="link-tab-minimize-toggle"
+          type="button"
+          title={object.isMinimized ? 'Expand tab' : 'Minimize tab'}
+          aria-label={object.isMinimized ? 'Expand tab' : 'Minimize tab'}
+          aria-expanded={!object.isMinimized}
+          onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onObjectChange(pageId, object.id, { isMinimized: !object.isMinimized });
+          }}
+        >{object.isMinimized ? '+' : '−'}</button>
+        <span className="link-tab-minimized-title">{object.title || (isAudio ? 'Listen to this' : 'Open this link')}</span>
+        <span className="link-tab-drag-mark" aria-hidden="true">⠿</span>
+      </div>
+      {!object.isMinimized && <div className="link-tab-body">
+        <strong className="link-tab-title">{object.title || (isAudio ? 'Listen to this' : 'Open this link')}</strong>
+        {isAudio ? (
+          audioDetails?.provider === 'native' ? (
+            <audio className="link-tab-audio" controls preload="none" src={audioDetails.src}>
+              Your browser does not support the audio player.
+            </audio>
+          ) : ['spotify', 'soundcloud', 'youtube'].includes(audioDetails?.provider) ? (
+            <iframe
+              className={'link-tab-embed link-tab-embed--' + audioDetails.provider}
+              src={audioDetails.src}
+              title={object.title || 'Audio player'}
+              height={audioDetails.height}
+              style={Number(object.height) > 0 ? { height: 'calc(100% - 28px)' } : undefined}
+              loading="lazy"
+              allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture; web-share"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allowFullScreen={audioDetails.provider !== 'soundcloud'}
+            />
+          ) : (
+            <div className="link-tab-audio-fallback">
+              <span>This source does not expose an in-page player.</span>
+              <a href={object.url} target="_blank" rel="noopener noreferrer">Open audio source ↗</a>
+            </div>
+          )
+        ) : (
+          <a
+            className="link-tab-open"
+            href={object.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={object.url}
+          >
+            Open link <span aria-hidden="true">↗</span>
+          </a>
+        )}
+      </div>}
+      {!object.isMinimized && <span className="link-tab-bottom-mark" aria-hidden="true">P · A</span>}
+      {!object.isMinimized && (
+        <button
+          className="link-tab-resize-handle"
+          type="button"
+          title="Resize link tab"
+          aria-label="Resize link tab"
+          onPointerDown={(event) => onResizeStart(event, object)}
+        ><span aria-hidden="true">↘</span></button>
+      )}
+    </article>
+  );
+}
+
 function PageObjects({ page, onObjectChange, onObjectDelete, pageRef }) {
   const dragRef = useRef(null);
 
   const beginDrag = (event, object) => {
-    if (event.target.closest('textarea, input, button, a, [contenteditable="true"]')) return;
+    if (event.target.closest('textarea, input, button, a, audio, iframe, [contenteditable="true"]')) return;
     event.preventDefault();
     event.stopPropagation();
     const bounds = pageRef.current?.getBoundingClientRect();
@@ -167,6 +320,91 @@ function PageObjects({ page, onObjectChange, onObjectDelete, pageRef }) {
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', end);
+  };
+
+  const beginLinkTabDrag = (event, object) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const bounds = pageRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    dragRef.current = {
+      id: object.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      left: object.left,
+      top: object.top,
+      width: bounds.width,
+      height: bounds.height,
+      linkTab: true,
+    };
+    const move = (moveEvent) => {
+      const drag = dragRef.current;
+      if (!drag || !drag.linkTab) return;
+      const left = Math.min(74, Math.max(2, drag.left + ((moveEvent.clientX - drag.startX) / drag.width) * 100));
+      const top = Math.min(82, Math.max(2, drag.top + ((moveEvent.clientY - drag.startY) / drag.height) * 100));
+      onObjectChange(page.id, drag.id, { left, top });
+    };
+    const end = () => {
+      dragRef.current = null;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  };
+
+  const beginLinkTabResize = (event, object) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const pageBounds = pageRef.current?.getBoundingClientRect();
+    const tabElement = event.currentTarget.closest('.link-tab-object');
+    if (!pageBounds || !tabElement || pageBounds.width <= 0 || pageBounds.height <= 0) return;
+
+    const tabBounds = tabElement.getBoundingClientRect();
+    const startWidth = Number(object.width) > 0
+      ? Number(object.width)
+      : (tabBounds.width / pageBounds.width) * 100;
+    const startHeight = Number(object.height) > 0
+      ? Number(object.height)
+      : (tabBounds.height / pageBounds.height) * 100;
+
+    dragRef.current = {
+      id: object.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth,
+      startHeight,
+      pageWidth: pageBounds.width,
+      pageHeight: pageBounds.height,
+      linkTabResize: true,
+    };
+
+    const move = (moveEvent) => {
+      const drag = dragRef.current;
+      if (!drag || !drag.linkTabResize) return;
+      const minWidth = Math.max(15, (116 / drag.pageWidth) * 100);
+      const width = Math.min(60, Math.max(minWidth,
+        drag.startWidth + ((moveEvent.clientX - drag.startX) / drag.pageWidth) * 100));
+      const minHeight = Math.max(10, (82 / drag.pageHeight) * 100);
+      const height = Math.min(86, Math.max(minHeight,
+        drag.startHeight + ((moveEvent.clientY - drag.startY) / drag.pageHeight) * 100));
+      onObjectChange(page.id, drag.id, {
+        width: Math.round(width * 10) / 10,
+        height: Math.round(height * 10) / 10,
+      });
+    };
+
+    const end = () => {
+      dragRef.current = null;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
   };
 
   const beginResize = (event, object) => {
@@ -300,6 +538,19 @@ function PageObjects({ page, onObjectChange, onObjectDelete, pageRef }) {
                 </div>
               )}
             </div>
+          );
+        }
+        if (object.type === 'linkTab') {
+          return (
+            <LinkTabObject
+              key={object.id}
+              object={object}
+              pageId={page.id}
+              onObjectChange={onObjectChange}
+              onObjectDelete={onObjectDelete}
+              onDragStart={beginLinkTabDrag}
+              onResizeStart={beginLinkTabResize}
+            />
           );
         }
         return null;
@@ -438,6 +689,11 @@ function App() {
   const [cloudError, setCloudError] = useState('');
   const [onlinePartners, setOnlinePartners] = useState([]);
   const [panel, setPanel] = useState('');
+  const [isLinkComposerOpen, setIsLinkComposerOpen] = useState(false);
+  const [linkDraftTitle, setLinkDraftTitle] = useState('');
+  const [linkDraftUrl, setLinkDraftUrl] = useState('');
+  const [linkDraftKind, setLinkDraftKind] = useState('link');
+  const [linkDraftError, setLinkDraftError] = useState('');
   const fileInputRef = useRef(null);
   const saveTimer = useRef(null);
   const versionTimer = useRef(null);
@@ -771,7 +1027,7 @@ function App() {
     const target = page?.objects.find((object) => object.id === objectId);
     if (!target) return;
 
-    const kind = target.type === 'photo' ? 'photograph' : 'sticky note';
+    const kind = target.type === 'photo' ? 'photograph' : target.type === 'linkTab' ? 'link tab' : 'sticky note';
     const confirmed = window.confirm('Delete this ' + kind + ' from the journal?');
     if (!confirmed) return;
 
@@ -850,6 +1106,52 @@ function App() {
       top: 18 + (count % 4) * 7,
       rotation: count % 2 ? 2 : -2,
     });
+  };
+
+  const openLinkComposer = () => {
+    setLinkDraftTitle('');
+    setLinkDraftUrl('');
+    setLinkDraftKind('link');
+    setLinkDraftError('');
+    setIsLinkComposerOpen(true);
+  };
+
+  const addLinkTab = (event) => {
+    event.preventDefault();
+    const rawUrl = linkDraftUrl.trim();
+    const normalizedUrl = /^[a-z][a-z\d+.-]*:/i.test(rawUrl) ? rawUrl : 'https://' + rawUrl;
+    let parsed;
+    try {
+      parsed = new URL(normalizedUrl);
+    } catch {
+      setLinkDraftError('Enter a complete link, such as https://example.com.');
+      return;
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname.includes('.')) {
+      setLinkDraftError('For safety, use a valid http:// or https:// link.');
+      return;
+    }
+    if (parsed.username || parsed.password) {
+      setLinkDraftError('Links containing embedded usernames or passwords are not supported.');
+      return;
+    }
+
+    const pageId = currentPageId();
+    const count = pagesRef.current.find((page) => page.id === pageId)?.objects.length || 0;
+    const kind = linkDraftKind === 'audio' ? 'audio' : 'link';
+    addObjectToPage(pageId, {
+      id: 'link-tab-' + Date.now(),
+      type: 'linkTab',
+      kind,
+      title: linkDraftTitle.trim() || (kind === 'audio' ? 'Listen to this' : parsed.hostname.replace(/^www\./i, '')),
+      url: parsed.href,
+      color: kind === 'audio' ? '#e0eaf0' : '#f3e7c8',
+      left: kind === 'audio' ? 5 + (count % 2) * 3 : Math.min(65, 6 + (count % 3) * 3),
+      top: kind === 'audio' ? 8 + (count % 3) * 7 : 55 + (count % 3) * 7,
+      rotation: count % 2 ? 1.4 : -1.4,
+    });
+    setIsLinkComposerOpen(false);
+    setLinkDraftError('');
   };
 
   const resizeImage = async (file) => {
@@ -1345,6 +1647,7 @@ function App() {
         </div>
         <div className="toolbar-group toolbar-insert">
           <button className="insert-button" onClick={addStickyNote}><span>＋</span> Sticky note</button>
+          <button className="insert-button" onClick={openLinkComposer}><span>＋</span> Link tab</button>
           <button className="insert-button" onClick={() => fileInputRef.current?.click()}><span>＋</span> Photograph</button>
           <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handlePhotoSelected} />
           <button className={'bookmark-button' + (activePage?.bookmarked ? ' is-bookmarked' : '')} onClick={toggleBookmark} title="Bookmark this page" aria-label="Bookmark this page">♡</button>
@@ -1405,6 +1708,64 @@ function App() {
           </div>
         </footer>
       </div>
+      {isLinkComposerOpen && (
+        <div
+          className="link-composer-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setIsLinkComposerOpen(false);
+          }}
+        >
+          <form
+            className="link-composer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="link-composer-heading"
+            onSubmit={addLinkTab}
+          >
+            <div className="link-composer-kicker">A LITTLE THING TO KEEP</div>
+            <h2 id="link-composer-heading">Add a link tab</h2>
+            <p className="link-composer-intro">Save a place, a song, a voice note, or anything you want to find together later.</p>
+            <label className="link-composer-label">
+              Tab type
+              <select value={linkDraftKind} onChange={(event) => setLinkDraftKind(event.target.value)}>
+                <option value="link">Web link</option>
+                <option value="audio">Audio or music · play here</option>
+              </select>
+            </label>
+            <label className="link-composer-label">
+              Little title
+              <input
+                type="text"
+                value={linkDraftTitle}
+                onChange={(event) => setLinkDraftTitle(event.target.value)}
+                maxLength={80}
+                placeholder={linkDraftKind === 'audio' ? 'e.g. our song' : 'e.g. the place we want to visit'}
+              />
+            </label>
+            <label className="link-composer-label">
+              {linkDraftKind === 'audio' ? 'Audio or music URL' : 'Website URL'}
+              <input
+                type="text"
+                inputMode="url"
+                value={linkDraftUrl}
+                onChange={(event) => { setLinkDraftUrl(event.target.value); setLinkDraftError(''); }}
+                autoComplete="url"
+                required
+                placeholder={linkDraftKind === 'audio' ? 'Spotify, SoundCloud, YouTube, or an audio file URL' : 'https://…'}
+              />
+            </label>
+            {linkDraftKind === 'audio' && (
+              <p className="link-composer-help">In-page players support direct audio files plus Spotify, SoundCloud, YouTube and YouTube Music links. Some services may require their own account or may restrict playback.</p>
+            )}
+            {linkDraftError && <p className="link-composer-error" role="alert">{linkDraftError}</p>}
+            <div className="link-composer-actions">
+              <button type="button" className="link-composer-cancel" onClick={() => setIsLinkComposerOpen(false)}>Cancel</button>
+              <button type="submit" className="link-composer-submit">Add to page <span aria-hidden="true">↗</span></button>
+            </div>
+          </form>
+        </div>
+      )}
       {renderPanel()}
       {panel && <button className="panel-scrim" onClick={() => setPanel('')} aria-label="Close side panel" />}
     </main>

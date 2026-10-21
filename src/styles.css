@@ -932,6 +932,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
  .link-tab-object {
   position: absolute;
   z-index: 5;
+  pointer-events: auto;
   width: clamp(148px, 19vw, 228px);
   overflow: visible;
   border: 1px solid rgba(99, 95, 79, .2);

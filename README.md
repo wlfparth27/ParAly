@@ -49,7 +49,7 @@ The service-account key bypasses Firebase client rules; keep it private, do not 
 - **Google Drive API:** original photos and compressed previews stored against the existing Google One / Drive quota. The API routes require server-only OAuth secrets.
 - **Vercel:** frontend hosting.
 
-The Drive photo-upload flow is scaffolded. It initiates a resumable Drive session through the private server API, uploads originals directly from the browser to Drive, uploads a compressed preview, then stores only the Drive file IDs and non-binary metadata in Firestore. The image proxy verifies journal membership before serving private preview bytes. This still needs real-project and CORS/runtime testing. Do not store base64 image data in Firestore documents.
+The Drive photo-upload flow creates a resumable Drive session through the private server API, sends the original and compressed preview in 512 KiB chunks through an authenticated API route, then stores only Drive file IDs and non-binary metadata in Firestore. This avoids direct browser-to-Drive CORS failures and keeps each request small. The image proxy verifies journal membership before serving private preview bytes. It still needs real-project end-to-end testing. Do not store base64 image data in Firestore documents.
 
 ## Security notes
 
@@ -62,4 +62,4 @@ The Drive photo-upload flow is scaffolded. It initiates a resumable Drive sessio
 
 ## Current limitations
 
-This branch is still a work in progress. Actual cloud behaviour needs Google sign-in enabled, Cloud Firestore created, the exact Realtime Database URL configured, deployed rules, and seeded memberships. The GitHub Actions build and server-script syntax check should pass before merging. Photo upload routes have not yet been tested against an actual Google Drive OAuth setup. We still need to test Yjs initialisation, simultaneous editing, reconnects, version restores, Drive upload CORS, membership enforcement, and free-tier read/write usage against real test accounts.
+This branch is still a work in progress. Actual cloud behaviour needs Google sign-in enabled, Cloud Firestore created, the exact Realtime Database URL configured, deployed rules, and seeded memberships. The GitHub Actions build and server-script syntax check should pass before merging. Photo upload routes have not yet been tested against an actual Google Drive OAuth setup. We still need to test Yjs initialisation, simultaneous editing, reconnects, version restores, chunked Drive uploads, membership enforcement, and free-tier read/write usage against real test accounts.

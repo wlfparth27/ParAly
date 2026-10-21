@@ -192,7 +192,7 @@ function getAudioPlayerDetails(rawUrl) {
   }
 }
 
-function LinkTabObject({ object, pageId, onObjectChange, onObjectDelete, onDragStart }) {
+function LinkTabObject({ object, pageId, onObjectDelete, onDragStart }) {
   const isAudio = object.kind === 'audio';
   const audioDetails = isAudio ? getAudioPlayerDetails(object.url) : null;
   return (
@@ -468,7 +468,6 @@ function PageObjects({ page, onObjectChange, onObjectDelete, pageRef }) {
               key={object.id}
               object={object}
               pageId={page.id}
-              onObjectChange={onObjectChange}
               onObjectDelete={onObjectDelete}
               onDragStart={beginLinkTabDrag}
             />

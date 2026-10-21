@@ -871,6 +871,38 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   transform: scale(1.06);
 }
 .object-delete-button:focus-visible { outline: 2px solid #708ca2; outline-offset: 2px; }
+
+.photo-resize-handle {
+  position: absolute;
+  right: -9px;
+  bottom: -9px;
+  z-index: 13;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border: 1px solid rgba(35, 54, 67, .32);
+  border-radius: 50%;
+  background: #e3edf2;
+  color: #3e6078;
+  box-shadow: 0 2px 7px rgba(35, 37, 37, .24);
+  font: 16px/1 'DM Sans', sans-serif;
+  cursor: nwse-resize;
+  touch-action: none;
+  user-select: none;
+  transition: background .16s ease, color .16s ease, transform .16s ease, box-shadow .16s ease;
+}
+.photo-resize-handle:hover,
+.photo-resize-handle:focus-visible {
+  background: #4c6f87;
+  color: #fffdf5;
+  box-shadow: 0 3px 10px rgba(35, 37, 37, .28);
+  transform: scale(1.08);
+}
+.photo-resize-handle:focus-visible { outline: 2px solid #9bbfd6; outline-offset: 2px; }
+.photo-resize-handle span { pointer-events: none; }
+
 .photo-object {
   z-index: 2;
   width: clamp(90px, 12vw, 148px);

@@ -133,6 +133,133 @@ function DrivePhotoImage({ object, alt, className = '' }) {
   return <img className={className} src={src} alt={alt || object.caption || 'A photograph in the journal'} draggable="false" />;
 }
 
+function getAudioPlayerDetails(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+
+    if (host === 'open.spotify.com') {
+      const match = parsed.pathname.match(/^\/(?:embed\/)?(track|album|playlist|episode|show)\/([A-Za-z0-9]+)/);
+      if (match) {
+        const type = match[1];
+        const id = match[2];
+        return {
+          provider: 'spotify',
+          src: 'https://open.spotify.com/embed/' + type + '/' + id + '?utm_source=generator',
+          height: (type === 'track' || type === 'episode') ? 152 : 352,
+        };
+      }
+    }
+
+    if (host === 'soundcloud.com' || host === 'm.soundcloud.com' || host === 'on.soundcloud.com') {
+      return {
+        provider: 'soundcloud',
+        src: 'https://w.soundcloud.com/player/?url=' + encodeURIComponent(parsed.href)
+          + '&color=%237d94a5&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=false',
+        height: 166,
+      };
+    }
+
+    if (host === 'youtu.be' || host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
+      const pathParts = parsed.pathname.split('/').filter(Boolean);
+      const videoId = host === 'youtu.be'
+        ? pathParts[0]
+        : (parsed.searchParams.get('v')
+          || ((pathParts[0] === 'embed' || pathParts[0] === 'shorts' || pathParts[0] === 'live') ? pathParts[1] : ''));
+      const playlistId = parsed.searchParams.get('list');
+      if (videoId && /^[A-Za-z0-9_-]{6,20}$/.test(videoId)) {
+        return {
+          provider: 'youtube',
+          src: 'https://www.youtube-nocookie.com/embed/' + videoId + (playlistId ? '?list=' + encodeURIComponent(playlistId) : '?rel=0'),
+          height: 190,
+        };
+      }
+      if (playlistId) {
+        return {
+          provider: 'youtube',
+          src: 'https://www.youtube-nocookie.com/embed/videoseries?list=' + encodeURIComponent(playlistId),
+          height: 190,
+        };
+      }
+    }
+
+    if (/\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|webm)$/i.test(parsed.pathname)) {
+      return { provider: 'native', src: parsed.href };
+    }
+    return { provider: 'unsupported', src: parsed.href };
+  } catch {
+    return { provider: 'unsupported', src: '' };
+  }
+}
+
+function LinkTabObject({ object, pageId, onObjectChange, onObjectDelete, onDragStart }) {
+  const isAudio = object.kind === 'audio';
+  const audioDetails = isAudio ? getAudioPlayerDetails(object.url) : null;
+  return (
+    <article
+      className={'link-tab-object' + (isAudio ? ' link-tab-object--audio' : ' link-tab-object--link')}
+      style={{
+        left: object.left + '%',
+        top: object.top + '%',
+        transform: 'rotate(' + (object.rotation || 0) + 'deg)',
+        '--link-tab-tint': object.color || (isAudio ? '#e0eaf0' : '#f3e7c8'),
+      }}
+      title="Drag the tab by its little header"
+    >
+      <button
+        className="object-delete-button"
+        type="button"
+        title="Delete link tab"
+        aria-label="Delete link tab"
+        onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+        onClick={(event) => { event.preventDefault(); event.stopPropagation(); onObjectDelete(pageId, object.id); }}
+      >×</button>
+      <div className="link-tab-grip" onPointerDown={(event) => onDragStart(event, object)}>
+        <span className="link-tab-symbol" aria-hidden="true">{isAudio ? '♫' : '↗'}</span>
+        <span>{isAudio ? 'A LITTLE SOUND' : 'A LITTLE LINK'}</span>
+        <span className="link-tab-drag-mark" aria-hidden="true">⠿</span>
+      </div>
+      <div className="link-tab-body">
+        <strong className="link-tab-title">{object.title || (isAudio ? 'Listen to this' : 'Open this link')}</strong>
+        {isAudio ? (
+          audioDetails?.provider === 'native' ? (
+            <audio className="link-tab-audio" controls preload="none" src={audioDetails.src}>
+              Your browser does not support the audio player.
+            </audio>
+          ) : ['spotify', 'soundcloud', 'youtube'].includes(audioDetails?.provider) ? (
+            <iframe
+              className={'link-tab-embed link-tab-embed--' + audioDetails.provider}
+              src={audioDetails.src}
+              title={object.title || 'Audio player'}
+              height={audioDetails.height}
+              loading="lazy"
+              allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture; web-share"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allowFullScreen={audioDetails.provider !== 'soundcloud'}
+            />
+          ) : (
+            <div className="link-tab-audio-fallback">
+              <span>This source does not expose an in-page player.</span>
+              <a href={object.url} target="_blank" rel="noopener noreferrer">Open audio source ↗</a>
+            </div>
+          )
+        ) : (
+          <a
+            className="link-tab-open"
+            href={object.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={object.url}
+          >
+            Open link <span aria-hidden="true">↗</span>
+          </a>
+        )}
+      </div>
+      <span className="link-tab-bottom-mark" aria-hidden="true">P · A</span>
+    </article>
+  );
+}
+
 function PageObjects({ page, onObjectChange, onObjectDelete, pageRef }) {
   const dragRef = useRef(null);
 

@@ -169,6 +169,47 @@ function PageObjects({ page, onObjectChange, onObjectDelete, pageRef }) {
     window.addEventListener('pointerup', end);
   };
 
+  const beginResize = (event, object) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const pageBounds = pageRef.current?.getBoundingClientRect();
+    const photoElement = event.currentTarget.closest('.photo-object');
+    if (!pageBounds || !photoElement || pageBounds.width <= 0) return;
+
+    const cssWidth = Number.parseFloat(window.getComputedStyle(photoElement).width) || photoElement.getBoundingClientRect().width;
+    const startWidth = Number(object.width) > 0
+      ? Number(object.width)
+      : (cssWidth / pageBounds.width) * 100;
+
+    dragRef.current = {
+      id: object.id,
+      startX: event.clientX,
+      startWidth,
+      pageWidth: pageBounds.width,
+      resize: true,
+    };
+
+    const move = (moveEvent) => {
+      const drag = dragRef.current;
+      if (!drag || !drag.resize) return;
+      const minPercent = Math.max(9, (68 / drag.pageWidth) * 100);
+      const width = Math.min(46, Math.max(minPercent,
+        drag.startWidth + ((moveEvent.clientX - drag.startX) / drag.pageWidth) * 100));
+      onObjectChange(page.id, drag.id, { width: Math.round(width * 10) / 10 });
+    };
+
+    const end = () => {
+      dragRef.current = null;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+    };
+
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  };
+
   return (
     <div className="page-objects" aria-label="Page decorations">
       {page.objects.map((object) => {
@@ -213,10 +254,11 @@ function PageObjects({ page, onObjectChange, onObjectDelete, pageRef }) {
               style={{
                 left: object.left + '%',
                 top: object.top + '%',
+                width: Number(object.width) > 0 ? object.width + '%' : undefined,
                 transform: 'rotate(' + (object.rotation || 0) + 'deg)',
               }}
               onPointerDown={(event) => beginDrag(event, object)}
-              title="Drag to move photograph"
+              title="Drag to move photograph; use the lower-right handle to resize"
             >
               <button
                 className="object-delete-button"
@@ -226,6 +268,13 @@ function PageObjects({ page, onObjectChange, onObjectDelete, pageRef }) {
                 onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
                 onClick={(event) => { event.preventDefault(); event.stopPropagation(); onObjectDelete(page.id, object.id); }}
               >×</button>
+              <button
+                className="photo-resize-handle"
+                type="button"
+                title="Resize photograph"
+                aria-label="Resize photograph"
+                onPointerDown={(event) => beginResize(event, object)}
+              ><span aria-hidden="true">↘</span></button>
               <DrivePhotoImage object={object} alt={object.caption || 'A photograph in the journal'} />
               {object.driveWebViewLink && (
                 <a

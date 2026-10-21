@@ -232,6 +232,7 @@ function LinkTabObject({ object, pageId, onObjectChange, onObjectDelete, onDragS
             onObjectChange(pageId, object.id, { isMinimized: !object.isMinimized });
           }}
         >{object.isMinimized ? '+' : '−'}</button>
+        <span className="link-tab-minimized-title">{object.title || (isAudio ? 'Listen to this' : 'Open this link')}</span>
         <span className="link-tab-drag-mark" aria-hidden="true">⠿</span>
       </div>
       {!object.isMinimized && <div className="link-tab-body">

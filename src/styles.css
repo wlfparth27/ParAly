@@ -932,6 +932,9 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
  .link-tab-object {
   position: absolute;
   z-index: 5;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
   pointer-events: auto;
   width: clamp(148px, 19vw, 228px);
   overflow: visible;
@@ -940,8 +943,13 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   background: #fbf7eb;
   color: #42505a;
   box-shadow: 2px 5px 12px rgba(54,48,37,.18), inset 0 0 0 1px rgba(255,255,255,.58);
-  pointer-events: auto;
 }
+.link-tab-object--minimized {
+  height: auto !important;
+  min-height: 0;
+  box-shadow: 1px 3px 7px rgba(54,48,37,.16), inset 0 0 0 1px rgba(255,255,255,.55);
+}
+.link-tab-object--minimized::before { top: -6px; }
 .link-tab-object::before {
   content: "";
   position: absolute;
@@ -972,8 +980,48 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 }
 .link-tab-grip:active { cursor: grabbing; }
 .link-tab-symbol { color: #536f83; font: 15px/1 'Cormorant Garamond', serif; }
-.link-tab-drag-mark { margin-left: auto; color: rgba(77,91,94,.58); font-size: 12px; }
-.link-tab-body { padding: 9px 10px 8px; }
+.link-tab-drag-mark { margin-left: 0; color: rgba(77,91,94,.58); font-size: 12px; }
+.link-tab-minimize-toggle {
+  display: grid;
+  place-items: center;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 19px;
+  padding: 0;
+  border: 1px solid rgba(77, 99, 111, .24);
+  border-radius: 3px;
+  background: rgba(255,255,255,.42);
+  color: #4d6574;
+  font: 15px/1 'DM Sans', sans-serif;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.link-tab-minimize-toggle:hover,
+.link-tab-minimize-toggle:focus-visible {
+  background: #536f83;
+  color: #fffdf5;
+}
+.link-tab-minimize-toggle:focus-visible { outline: 2px solid #9bbfd6; outline-offset: 2px; }
+.link-tab-minimized-title {
+  display: none;
+  min-width: 0;
+  overflow: hidden;
+  color: #425766;
+  font: italic 12px/1.1 'Cormorant Garamond', serif;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.link-tab-object--minimized .link-tab-minimized-title { display: block; flex: 1 1 auto; }
+.link-tab-object--minimized .link-tab-grip { border-bottom: 0; }
+.link-tab-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 9px 10px 8px;
+  overflow: auto;
+}
 .link-tab-title {
   display: block;
   margin: 0 16px 7px 0;
@@ -1010,9 +1058,12 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   border-radius: 4px;
   background: rgba(35, 45, 51, .08);
 }
-.link-tab-embed--spotify { min-height: 152px; }
-.link-tab-embed--soundcloud { min-height: 166px; }
-.link-tab-embed--youtube { min-height: 190px; }
+.link-tab-embed--spotify,
+.link-tab-embed--soundcloud,
+.link-tab-embed--youtube {
+  min-height: 0;
+  flex: 1 1 auto;
+}
 .link-tab-audio-fallback {
   display: flex;
   flex-direction: column;
@@ -1030,6 +1081,38 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   font: 6px 'DM Mono', monospace;
   letter-spacing: .12em;
 }
+
+.link-tab-resize-handle {
+  position: absolute;
+  right: -9px;
+  bottom: -9px;
+  z-index: 14;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border: 1px solid rgba(35, 54, 67, .32);
+  border-radius: 50%;
+  background: #e3edf2;
+  color: #3e6078;
+  box-shadow: 0 2px 7px rgba(35, 37, 37, .24);
+  font: 16px/1 'DM Sans', sans-serif;
+  cursor: nwse-resize;
+  touch-action: none;
+  user-select: none;
+  transition: background .16s ease, color .16s ease, transform .16s ease, box-shadow .16s ease;
+}
+.link-tab-resize-handle:hover,
+.link-tab-resize-handle:focus-visible {
+  background: #4c6f87;
+  color: #fffdf5;
+  box-shadow: 0 3px 10px rgba(35, 37, 37, .28);
+  transform: scale(1.08);
+}
+.link-tab-resize-handle:focus-visible { outline: 2px solid #9bbfd6; outline-offset: 2px; }
+.link-tab-resize-handle span { pointer-events: none; }
+.link-tab-object--minimized .link-tab-resize-handle { display: none; }
 
 /* A small paper-like composer for web links and in-page audio tabs. */
 .link-composer-backdrop {
@@ -1299,6 +1382,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   .photo-object { width: 102px; }
   .link-tab-object { width: min(190px, 60vw); }
   .link-tab-object--audio { width: min(270px, 76vw); }
+  .link-tab-resize-handle { width: 27px; height: 27px; right: -8px; bottom: -8px; }
   .link-composer h2 { font-size: 30px; }
   .journal-bottom-controls { flex-wrap: wrap; gap: 12px 17px; margin: 18px auto 25px; }
   .page-turn-button { font-size: 9px; }

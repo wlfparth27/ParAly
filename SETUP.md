@@ -79,7 +79,7 @@ The app still needs end-to-end runtime verification against the Firebase project
 
 ## 6. Enable secure photo uploads to the existing Google One Drive
 
-Photo uploads use the existing Google Drive quota, not Firebase Storage or a third-party paid image host. Original photos are uploaded directly to a resumable Drive session; small previews are used inside the journal. The original stays in your Drive. There is no additional storage subscription, but it consumes your current shared Google One quota.
+Photo uploads use the existing Google Drive quota, not Firebase Storage or a third-party paid image host. ParAly creates a resumable Drive session through its private API, then relays the file to Drive in small authenticated chunks through Vercel. This avoids browser CORS failures from directly uploading to Google's session URL while keeping each function request below the request-body limit. Small previews are used inside the journal. The original stays in your Drive. There is no additional storage subscription, but it consumes your current shared Google One quota.
 
 ### Authorise the storage-owning Google account
 
@@ -113,7 +113,7 @@ The Drive routes live under `api/drive/` and run as Vercel serverless functions.
 
 If local server routes are needed, link the checkout to your Vercel project and use `npx vercel dev`; plain `npm run dev` starts Vite only and does not execute the API routes.
 
-For cost safety, no paid Drive or photo-storage provider is configured. Direct Drive uploads bypass the 4.5 MB Vercel function request limit; previews are capped and proxied as small responses. The originals remain in the owner's Drive folder and count against that account's remaining Google One quota.
+For cost safety, no paid Drive or photo-storage provider is configured. The browser sends 512 KiB chunks to an authenticated API route, which forwards them to the Google Drive resumable-upload session. This prevents browser CORS issues and keeps requests small; larger photos require more function invocations, so keep photo sizes reasonable. Previews are capped and served through a private route. Originals remain in the owner's Drive folder and count against that account's remaining Google One quota.
 
 
 ## Existing Firebase project values

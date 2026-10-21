@@ -1067,8 +1067,8 @@ function App() {
       title: linkDraftTitle.trim() || (kind === 'audio' ? 'Listen to this' : parsed.hostname.replace(/^www\./i, '')),
       url: parsed.href,
       color: kind === 'audio' ? '#e0eaf0' : '#f3e7c8',
-      left: Math.min(65, 6 + (count % 3) * 3),
-      top: 55 + (count % 3) * 7,
+      left: kind === 'audio' ? 5 + (count % 2) * 3 : Math.min(65, 6 + (count % 3) * 3),
+      top: kind === 'audio' ? 8 + (count % 3) * 7 : 55 + (count % 3) * 7,
       rotation: count % 2 ? 1.4 : -1.4,
     });
     setIsLinkComposerOpen(false);

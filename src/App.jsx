@@ -610,6 +610,11 @@ function App() {
   const [cloudError, setCloudError] = useState('');
   const [onlinePartners, setOnlinePartners] = useState([]);
   const [panel, setPanel] = useState('');
+  const [isLinkComposerOpen, setIsLinkComposerOpen] = useState(false);
+  const [linkDraftTitle, setLinkDraftTitle] = useState('');
+  const [linkDraftUrl, setLinkDraftUrl] = useState('');
+  const [linkDraftKind, setLinkDraftKind] = useState('link');
+  const [linkDraftError, setLinkDraftError] = useState('');
   const fileInputRef = useRef(null);
   const saveTimer = useRef(null);
   const versionTimer = useRef(null);
@@ -943,7 +948,7 @@ function App() {
     const target = page?.objects.find((object) => object.id === objectId);
     if (!target) return;
 
-    const kind = target.type === 'photo' ? 'photograph' : 'sticky note';
+    const kind = target.type === 'photo' ? 'photograph' : target.type === 'linkTab' ? 'link tab' : 'sticky note';
     const confirmed = window.confirm('Delete this ' + kind + ' from the journal?');
     if (!confirmed) return;
 
@@ -1022,6 +1027,52 @@ function App() {
       top: 18 + (count % 4) * 7,
       rotation: count % 2 ? 2 : -2,
     });
+  };
+
+  const openLinkComposer = () => {
+    setLinkDraftTitle('');
+    setLinkDraftUrl('');
+    setLinkDraftKind('link');
+    setLinkDraftError('');
+    setIsLinkComposerOpen(true);
+  };
+
+  const addLinkTab = (event) => {
+    event.preventDefault();
+    const rawUrl = linkDraftUrl.trim();
+    const normalizedUrl = /^[a-z][a-z\d+.-]*:/i.test(rawUrl) ? rawUrl : 'https://' + rawUrl;
+    let parsed;
+    try {
+      parsed = new URL(normalizedUrl);
+    } catch {
+      setLinkDraftError('Enter a complete link, such as https://example.com.');
+      return;
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname.includes('.')) {
+      setLinkDraftError('For safety, use a valid http:// or https:// link.');
+      return;
+    }
+    if (parsed.username || parsed.password) {
+      setLinkDraftError('Links containing embedded usernames or passwords are not supported.');
+      return;
+    }
+
+    const pageId = currentPageId();
+    const count = pagesRef.current.find((page) => page.id === pageId)?.objects.length || 0;
+    const kind = linkDraftKind === 'audio' ? 'audio' : 'link';
+    addObjectToPage(pageId, {
+      id: 'link-tab-' + Date.now(),
+      type: 'linkTab',
+      kind,
+      title: linkDraftTitle.trim() || (kind === 'audio' ? 'Listen to this' : parsed.hostname.replace(/^www\./i, '')),
+      url: parsed.href,
+      color: kind === 'audio' ? '#e0eaf0' : '#f3e7c8',
+      left: Math.min(65, 6 + (count % 3) * 3),
+      top: 55 + (count % 3) * 7,
+      rotation: count % 2 ? 1.4 : -1.4,
+    });
+    setIsLinkComposerOpen(false);
+    setLinkDraftError('');
   };
 
   const resizeImage = async (file) => {
@@ -1517,6 +1568,7 @@ function App() {
         </div>
         <div className="toolbar-group toolbar-insert">
           <button className="insert-button" onClick={addStickyNote}><span>＋</span> Sticky note</button>
+          <button className="insert-button" onClick={openLinkComposer}><span>＋</span> Link tab</button>
           <button className="insert-button" onClick={() => fileInputRef.current?.click()}><span>＋</span> Photograph</button>
           <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handlePhotoSelected} />
           <button className={'bookmark-button' + (activePage?.bookmarked ? ' is-bookmarked' : '')} onClick={toggleBookmark} title="Bookmark this page" aria-label="Bookmark this page">♡</button>
@@ -1577,6 +1629,64 @@ function App() {
           </div>
         </footer>
       </div>
+      {isLinkComposerOpen && (
+        <div
+          className="link-composer-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setIsLinkComposerOpen(false);
+          }}
+        >
+          <form
+            className="link-composer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="link-composer-heading"
+            onSubmit={addLinkTab}
+          >
+            <div className="link-composer-kicker">A LITTLE THING TO KEEP</div>
+            <h2 id="link-composer-heading">Add a link tab</h2>
+            <p className="link-composer-intro">Save a place, a song, a voice note, or anything you want to find together later.</p>
+            <label className="link-composer-label">
+              Tab type
+              <select value={linkDraftKind} onChange={(event) => setLinkDraftKind(event.target.value)}>
+                <option value="link">Web link</option>
+                <option value="audio">Audio or music · play here</option>
+              </select>
+            </label>
+            <label className="link-composer-label">
+              Little title
+              <input
+                type="text"
+                value={linkDraftTitle}
+                onChange={(event) => setLinkDraftTitle(event.target.value)}
+                maxLength={80}
+                placeholder={linkDraftKind === 'audio' ? 'e.g. our song' : 'e.g. the place we want to visit'}
+              />
+            </label>
+            <label className="link-composer-label">
+              {linkDraftKind === 'audio' ? 'Audio or music URL' : 'Website URL'}
+              <input
+                type="text"
+                inputMode="url"
+                value={linkDraftUrl}
+                onChange={(event) => { setLinkDraftUrl(event.target.value); setLinkDraftError(''); }}
+                autoComplete="url"
+                required
+                placeholder={linkDraftKind === 'audio' ? 'Spotify, SoundCloud, YouTube, or an audio file URL' : 'https://…'}
+              />
+            </label>
+            {linkDraftKind === 'audio' && (
+              <p className="link-composer-help">In-page players support direct audio files plus Spotify, SoundCloud, YouTube and YouTube Music links. Some services may require their own account or may restrict playback.</p>
+            )}
+            {linkDraftError && <p className="link-composer-error" role="alert">{linkDraftError}</p>}
+            <div className="link-composer-actions">
+              <button type="button" className="link-composer-cancel" onClick={() => setIsLinkComposerOpen(false)}>Cancel</button>
+              <button type="submit" className="link-composer-submit">Add to page <span aria-hidden="true">↗</span></button>
+            </div>
+          </form>
+        </div>
+      )}
       {renderPanel()}
       {panel && <button className="panel-scrim" onClick={() => setPanel('')} aria-label="Close side panel" />}
     </main>

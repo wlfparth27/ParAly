@@ -192,15 +192,17 @@ function getAudioPlayerDetails(rawUrl) {
   }
 }
 
-function LinkTabObject({ object, pageId, onObjectDelete, onDragStart }) {
+function LinkTabObject({ object, pageId, onObjectChange, onObjectDelete, onDragStart, onResizeStart }) {
   const isAudio = object.kind === 'audio';
   const audioDetails = isAudio ? getAudioPlayerDetails(object.url) : null;
   return (
     <article
-      className={'link-tab-object' + (isAudio ? ' link-tab-object--audio' : ' link-tab-object--link')}
+      className={'link-tab-object' + (isAudio ? ' link-tab-object--audio' : ' link-tab-object--link') + (object.isMinimized ? ' link-tab-object--minimized' : '')}
       style={{
         left: object.left + '%',
         top: object.top + '%',
+        width: Number(object.width) > 0 ? object.width + '%' : undefined,
+        height: !object.isMinimized && Number(object.height) > 0 ? object.height + '%' : undefined,
         transform: 'rotate(' + (object.rotation || 0) + 'deg)',
         '--link-tab-tint': object.color || (isAudio ? '#e0eaf0' : '#f3e7c8'),
       }}
@@ -217,9 +219,22 @@ function LinkTabObject({ object, pageId, onObjectDelete, onDragStart }) {
       <div className="link-tab-grip" onPointerDown={(event) => onDragStart(event, object)}>
         <span className="link-tab-symbol" aria-hidden="true">{isAudio ? '♫' : '↗'}</span>
         <span>{isAudio ? 'A LITTLE SOUND' : 'A LITTLE LINK'}</span>
+        <button
+          className="link-tab-minimize-toggle"
+          type="button"
+          title={object.isMinimized ? 'Expand tab' : 'Minimize tab'}
+          aria-label={object.isMinimized ? 'Expand tab' : 'Minimize tab'}
+          aria-expanded={!object.isMinimized}
+          onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onObjectChange(pageId, object.id, { isMinimized: !object.isMinimized });
+          }}
+        >{object.isMinimized ? '+' : '−'}</button>
         <span className="link-tab-drag-mark" aria-hidden="true">⠿</span>
       </div>
-      <div className="link-tab-body">
+      {!object.isMinimized && <div className="link-tab-body">
         <strong className="link-tab-title">{object.title || (isAudio ? 'Listen to this' : 'Open this link')}</strong>
         {isAudio ? (
           audioDetails?.provider === 'native' ? (
@@ -232,6 +247,7 @@ function LinkTabObject({ object, pageId, onObjectDelete, onDragStart }) {
               src={audioDetails.src}
               title={object.title || 'Audio player'}
               height={audioDetails.height}
+              style={Number(object.height) > 0 ? { height: 'calc(100% - 28px)' } : undefined}
               loading="lazy"
               allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture; web-share"
               referrerPolicy="strict-origin-when-cross-origin"
@@ -254,8 +270,17 @@ function LinkTabObject({ object, pageId, onObjectDelete, onDragStart }) {
             Open link <span aria-hidden="true">↗</span>
           </a>
         )}
-      </div>
-      <span className="link-tab-bottom-mark" aria-hidden="true">P · A</span>
+      </div>}
+      {!object.isMinimized && <span className="link-tab-bottom-mark" aria-hidden="true">P · A</span>}
+      {!object.isMinimized && (
+        <button
+          className="link-tab-resize-handle"
+          type="button"
+          title="Resize link tab"
+          aria-label="Resize link tab"
+          onPointerDown={(event) => onResizeStart(event, object)}
+        ><span aria-hidden="true">↘</span></button>
+      )}
     </article>
   );
 }
@@ -318,6 +343,58 @@ function PageObjects({ page, onObjectChange, onObjectDelete, pageRef }) {
       const top = Math.min(82, Math.max(2, drag.top + ((moveEvent.clientY - drag.startY) / drag.height) * 100));
       onObjectChange(page.id, drag.id, { left, top });
     };
+    const end = () => {
+      dragRef.current = null;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  };
+
+  const beginLinkTabResize = (event, object) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const pageBounds = pageRef.current?.getBoundingClientRect();
+    const tabElement = event.currentTarget.closest('.link-tab-object');
+    if (!pageBounds || !tabElement || pageBounds.width <= 0 || pageBounds.height <= 0) return;
+
+    const tabBounds = tabElement.getBoundingClientRect();
+    const startWidth = Number(object.width) > 0
+      ? Number(object.width)
+      : (tabBounds.width / pageBounds.width) * 100;
+    const startHeight = Number(object.height) > 0
+      ? Number(object.height)
+      : (tabBounds.height / pageBounds.height) * 100;
+
+    dragRef.current = {
+      id: object.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth,
+      startHeight,
+      pageWidth: pageBounds.width,
+      pageHeight: pageBounds.height,
+      linkTabResize: true,
+    };
+
+    const move = (moveEvent) => {
+      const drag = dragRef.current;
+      if (!drag || !drag.linkTabResize) return;
+      const minWidth = Math.max(15, (116 / drag.pageWidth) * 100);
+      const width = Math.min(60, Math.max(minWidth,
+        drag.startWidth + ((moveEvent.clientX - drag.startX) / drag.pageWidth) * 100));
+      const minHeight = Math.max(10, (82 / drag.pageHeight) * 100);
+      const height = Math.min(86, Math.max(minHeight,
+        drag.startHeight + ((moveEvent.clientY - drag.startY) / drag.pageHeight) * 100));
+      onObjectChange(page.id, drag.id, {
+        width: Math.round(width * 10) / 10,
+        height: Math.round(height * 10) / 10,
+      });
+    };
+
     const end = () => {
       dragRef.current = null;
       window.removeEventListener('pointermove', move);
@@ -468,8 +545,10 @@ function PageObjects({ page, onObjectChange, onObjectDelete, pageRef }) {
               key={object.id}
               object={object}
               pageId={page.id}
+              onObjectChange={onObjectChange}
               onObjectDelete={onObjectDelete}
               onDragStart={beginLinkTabDrag}
+              onResizeStart={beginLinkTabResize}
             />
           );
         }

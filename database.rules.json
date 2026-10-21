@@ -1,0 +1,21 @@
+{
+  "rules": {
+    "journals": {
+      "paraly": {
+        "members": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid && data.val() === true",
+            ".write": false
+          }
+        },
+        "presence": {
+          ".read": "auth != null && root.child('journals').child('paraly').child('members').child(auth.uid).val() === true",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && root.child('journals').child('paraly').child('members').child(auth.uid).val() === true",
+            ".validate": "newData.hasChildren(['uid', 'displayName', 'pageId', 'lastSeen']) && newData.child('uid').val() === $uid"
+          }
+        }
+      }
+    }
+  }
+}

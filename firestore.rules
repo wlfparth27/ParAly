@@ -1,0 +1,49 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isJournalMember() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/journals/paraly/members/$(request.auth.uid));
+    }
+
+    // Memberships are created only by the local Admin SDK bootstrap script.
+    // Clients cannot invite arbitrary users or grant themselves access.
+    match /journals/paraly/members/{memberUid} {
+      allow get: if isJournalMember() && request.auth.uid == memberUid;
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
+    match /journals/paraly/settings/{settingId} {
+      allow get, create, update: if isJournalMember();
+      allow list, delete: if false;
+    }
+
+    match /journals/paraly/pages/{pageId} {
+      allow read, create, update, delete: if isJournalMember();
+    }
+
+    // Snapshots are immutable after creation. Restoring a snapshot creates a new page
+    // revision rather than allowing old history records to be silently rewritten.
+    match /journals/paraly/history/{versionId} {
+      allow read, create: if isJournalMember();
+      allow update, delete: if false;
+    }
+
+    // Reserved for the Yjs/Firestore collaboration provider. The provider's
+    // update blobs live under each page and are readable only to journal members.
+    match /journals/paraly/pages/{pageId}/yjs/{document=**} {
+      allow read, write: if isJournalMember();
+    }
+
+    // Default deny for every other document in this database.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -264,7 +264,7 @@ function PageObjects({ page, onObjectChange, onObjectDelete, pageRef }) {
   const dragRef = useRef(null);
 
   const beginDrag = (event, object) => {
-    if (event.target.closest('textarea, input, button, a, [contenteditable="true"]')) return;
+    if (event.target.closest('textarea, input, button, a, audio, iframe, [contenteditable="true"]')) return;
     event.preventDefault();
     event.stopPropagation();
     const bounds = pageRef.current?.getBoundingClientRect();
@@ -294,6 +294,39 @@ function PageObjects({ page, onObjectChange, onObjectDelete, pageRef }) {
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', end);
+  };
+
+  const beginLinkTabDrag = (event, object) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const bounds = pageRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    dragRef.current = {
+      id: object.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      left: object.left,
+      top: object.top,
+      width: bounds.width,
+      height: bounds.height,
+      linkTab: true,
+    };
+    const move = (moveEvent) => {
+      const drag = dragRef.current;
+      if (!drag || !drag.linkTab) return;
+      const left = Math.min(74, Math.max(2, drag.left + ((moveEvent.clientX - drag.startX) / drag.width) * 100));
+      const top = Math.min(82, Math.max(2, drag.top + ((moveEvent.clientY - drag.startY) / drag.height) * 100));
+      onObjectChange(page.id, drag.id, { left, top });
+    };
+    const end = () => {
+      dragRef.current = null;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
   };
 
   const beginResize = (event, object) => {
@@ -427,6 +460,18 @@ function PageObjects({ page, onObjectChange, onObjectDelete, pageRef }) {
                 </div>
               )}
             </div>
+          );
+        }
+        if (object.type === 'linkTab') {
+          return (
+            <LinkTabObject
+              key={object.id}
+              object={object}
+              pageId={page.id}
+              onObjectChange={onObjectChange}
+              onObjectDelete={onObjectDelete}
+              onDragStart={beginLinkTabDrag}
+            />
           );
         }
         return null;

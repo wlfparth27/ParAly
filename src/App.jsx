@@ -803,41 +803,87 @@ function App() {
     });
   };
 
-  const resizeImage = (file) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = reject;
-    reader.onload = () => {
-      const image = new Image();
-      image.onerror = reject;
-      image.onload = () => {
-        let scale = Math.min(1, 1200 / Math.max(image.width, image.height));
-        let dataUrl = '';
-        for (let attempt = 0; attempt < 7; attempt += 1) {
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.max(1, Math.round(image.width * scale));
-          canvas.height = Math.max(1, Math.round(image.height * scale));
-          const context = canvas.getContext('2d');
-          if (!context) {
-            reject(new Error('Your browser could not prepare this photograph.'));
-            return;
-          }
-          context.drawImage(image, 0, 0, canvas.width, canvas.height);
-          const quality = Math.max(0.42, 0.78 - attempt * 0.08);
-          dataUrl = canvas.toDataURL('image/jpeg', quality);
-          const estimatedBytes = Math.max(0, dataUrl.length - dataUrl.indexOf(',') - 1) * 0.75;
-          if (estimatedBytes <= 1.25 * 1024 * 1024) {
-            resolve(dataUrl);
-            return;
-          }
-          if (attempt >= 2) scale *= 0.82;
+  const resizeImage = async (file) => {
+    let image = null;
+    let objectUrl = '';
+    let previewBlob = null;
+
+    // Prefer Blob decoding/encoding. This is more reliable than round-tripping
+    // the selected file through a large base64 data URL before preparing a Drive
+    // preview, and it gives us the actual compressed Blob for upload.
+    if (typeof createImageBitmap === 'function') {
+      try {
+        image = await createImageBitmap(file);
+      } catch {
+        // Fall back to the browser image decoder below for formats supported by
+        // <img> but not by createImageBitmap in a particular browser.
+      }
+    }
+
+    if (!image) {
+      objectUrl = URL.createObjectURL(file);
+      image = await new Promise((resolve, reject) => {
+        const element = new Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error(
+          'Your browser could not read that image file. Try opening it and exporting it again as a standard JPG or PNG.'
+        ));
+        element.src = objectUrl;
+      }).catch((error) => {
+        URL.revokeObjectURL(objectUrl);
+        throw error;
+      });
+    }
+
+    try {
+      const originalWidth = image.width;
+      const originalHeight = image.height;
+      if (!originalWidth || !originalHeight) {
+        throw new Error('The selected image has no readable dimensions. Try exporting it as a standard JPG or PNG.');
+      }
+
+      let scale = Math.min(1, 1200 / Math.max(originalWidth, originalHeight));
+      for (let attempt = 0; attempt < 7; attempt += 1) {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(originalWidth * scale));
+        canvas.height = Math.max(1, Math.round(originalHeight * scale));
+        const context = canvas.getContext('2d');
+        if (!context) {
+          throw new Error('Your browser could not create an image preview. Try another browser or a smaller photo.');
         }
-        if (dataUrl) resolve(dataUrl);
-        else reject(new Error('That photograph could not be compressed.'));
-      };
-      image.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-  });
+
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const quality = Math.max(0.42, 0.78 - attempt * 0.08);
+        previewBlob = await new Promise((resolve, reject) => {
+          canvas.toBlob((blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error('Your browser could not encode the image preview. Try saving the photo as a standard JPG or PNG.'));
+          }, 'image/jpeg', quality);
+        });
+
+        if (previewBlob.size <= 1.25 * 1024 * 1024 || attempt === 6) {
+          const previewSrc = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error('The compressed preview could not be prepared in this browser.'));
+            reader.readAsDataURL(previewBlob);
+          });
+          if (!previewSrc) throw new Error('The compressed preview was empty. Please choose another JPG or PNG.');
+          return { previewSrc, previewBlob };
+        }
+
+        if (attempt >= 2) scale *= 0.82;
+      }
+
+      throw new Error('The compressed preview could not be prepared. Please choose another JPG or PNG.');
+    } catch (error) {
+      if (error instanceof Error) throw error;
+      throw new Error('Your browser could not prepare this image. Try exporting it again as a standard JPG or PNG.');
+    } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (typeof image.close === 'function') image.close();
+    }
+  };
 
   const handlePhotoSelected = async (event) => {
     const file = event.target.files?.[0];
@@ -853,13 +899,16 @@ function App() {
     }
 
     let previewSrc = '';
+    let previewBlob = null;
     let driveAssets = {};
     let completed = false;
     try {
-      previewSrc = await resizeImage(file);
+      const prepared = await resizeImage(file);
+      previewSrc = prepared.previewSrc;
+      previewBlob = prepared.previewBlob;
+
       if (auth.configured && auth.user) {
         setSaveState('Uploading photograph to Drive…');
-        const previewBlob = await (await fetch(previewSrc)).blob();
         driveAssets = await uploadJournalPhoto(file, previewBlob);
       }
 
@@ -879,10 +928,13 @@ function App() {
       completed = true;
       setSaveState(auth.configured && auth.user ? 'Photo saved to Drive · syncing journal' : 'Saved on this device');
     } catch (error) {
-      const message = error?.message || 'That image could not be added.';
-      window.alert(message.includes('Drive') || message.includes('ParAly') || message.includes('Google')
-        ? message
-        : 'That image could not be prepared. Try a JPG or PNG.');
+      const message = error?.message || 'The photograph could not be added for an unknown reason.';
+      window.alert(message);
+      if (cloudState === 'ready') {
+        setSaveState(message.includes('Drive') || message.includes('Google')
+          ? 'Google Drive upload failed'
+          : 'Photograph preparation failed');
+      }
     } finally {
       if (!completed && cloudState === 'ready') setSaveState('Synced with Firebase');
     }
